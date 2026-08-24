@@ -1,11 +1,21 @@
 <idea-plugin>
     <id>com.ctjsoft.devops.issue-link-push</id>
     <name>Issue Link Push</name>
-    <vendor>CTJSoft</vendor>
+    <vendor url="https://github.com/liukuankuan2136/idea-git-push" email="liu740721666@gmail.com">LKK</vendor>
 
     <description><![CDATA[
-        Integrates IntelliJ IDEA Git workflows with the CTJSoft DevOps task system.
+        Integrates IntelliJ IDEA Git workflows with the DevOps task system at devops.ctjsoft.com.
+        The plugin is publicly installable, but its task features require an account on that service.
     ]]></description>
+
+    <change-notes><![CDATA[
+        <h3>0.1.0</h3>
+        <ul>
+            <li>Initial IntelliJ IDEA release for CTJSoft DevOps task, Git, work-hour, daily-report, and regional compliance workflows.</li>
+            <li>Added diagnostic logging controlled by the plugin settings.</li>
+            <li>Added a quick-open action for the Issue Link Push menu.</li>
+        </ul>
+    ]]></change-notes>
 
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.vcs</depends>
@@ -42,5 +52,10 @@
             <action id="IssueLinkPush.ClearCache" class="com.ctjsoft.devops.action.ClearCacheAction"
                     text="清除 DevOps 缓存"/>
         </group>
+        <action id="IssueLinkPush.OpenMenu" class="com.ctjsoft.devops.action.OpenIssueLinkPushAction"
+                text="快速打开 Issue Link Push">
+            <add-to-group group-id="ToolsMenu" anchor="first"/>
+            <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift P"/>
+        </action>
     </actions>
 </idea-plugin>

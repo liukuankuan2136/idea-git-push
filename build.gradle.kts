@@ -33,8 +33,9 @@ intellijPlatform {
         version = project.version.toString()
 
         ideaVersion {
-            sinceBuild = "261.26222.65"
-            untilBuild = "261.*"
+            // The implementation uses APIs available since the 2024.3 platform
+            // and deliberately has no upper bound for forward compatibility.
+            sinceBuild = "243"
         }
     }
 
@@ -42,6 +43,18 @@ intellijPlatform {
         ides {
             local(providers.gradleProperty("ideaLocalPath"))
         }
+    }
+
+    // Marketplace credentials and signing material are supplied only through
+    // environment variables/Gradle properties and must never be committed.
+    publishing {
+        token = providers.gradleProperty("intellijPlatformPublishingToken")
+    }
+
+    signing {
+        certificateChain = providers.environmentVariable("CERTIFICATE_CHAIN")
+        privateKey = providers.environmentVariable("PRIVATE_KEY")
+        password = providers.environmentVariable("PRIVATE_KEY_PASSWORD")
     }
 }
 
