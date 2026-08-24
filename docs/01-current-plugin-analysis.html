@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>01 · 现有 VS Code 插件分析</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main class="shell">
+  <header class="topbar">
+    <div class="brand"><a href="index.html">Issue Link Push · IDEA Migration</a></div>
+    <nav class="nav"><a href="index.html">首页</a><a href="02-idea-plugin-design.html">设计方案</a><a href="03-confirmation-checklist.html">确认清单</a></nav>
+  </header>
+
+  <section class="hero">
+    <span class="eyebrow">文档 01 · Current-State Analysis</span>
+    <h1>现有 VS Code 插件分析</h1>
+    <p>分析对象为 <code>D:\code\my-workspace\git-push</code> 当前源码，版本 <code>0.3.12</code>。重点不是复述 README，而是从实际代码还原功能边界、业务规则、数据流、失败语义和迁移风险。</p>
+  </section>
+
+  <div class="doc-layout">
+    <aside class="toc">
+      <strong>目录</strong>
+      <a href="#scope">1. 范围与结论</a>
+      <a href="#inventory">2. 工程盘点</a>
+      <a href="#architecture">3. 当前架构</a>
+      <a href="#features">4. 功能清单</a>
+      <a href="#flows">5. 核心流程</a>
+      <a href="#rules">6. 关键业务规则</a>
+      <a href="#data">7. 配置与数据存储</a>
+      <a href="#api">8. DevOps API</a>
+      <a href="#git">9. Git 事务语义</a>
+      <a href="#ux">10. UI 问题分析</a>
+      <a href="#risks">11. 风险与缺口</a>
+      <a href="#migration">12. 迁移判断</a>
+      <a href="#evidence">13. 分析依据</a>
+    </aside>
+
+    <article class="doc-main">
+      <section class="doc-section" id="scope">
+        <h2>1. 范围与结论</h2>
+        <div class="callout ok"><strong>总体结论：具备完整迁移条件。</strong>业务能力主要由 HTTP、Git CLI、静态规则和本地状态组成，不依赖 VS Code 编辑器模型。需要重写的是平台接入层和交互层，核心规则可以等价迁移。</div>
+        <p>当前插件实际已发展为一个内部 DevOps 工作台，包含代码提交、工作项关联、工时管理、任务创建、日报和区域合规检查。若只按 README 中最初的“提交 + 推送 + 工时”实现 IDEA 版，会遗漏 0.3.7–0.3.12 的大量能力。</p>
+        <p>本分析把“功能一样”定义为：业务输入、DevOps 请求、Git 结果、工时计算、任务模板、区域规则及异常结果保持等价；交互步骤不要求一致，IDEA 版应主动合并为单弹窗。</p>
+      </section>
+
+      <section class="doc-section" id="inventory">
+        <h2>2. 工程盘点</h2>
+        <table>
+          <thead><tr><th>维度</th><th>当前情况</th><th>迁移含义</th></tr></thead>
+          <tbody>
+            <tr><td>技术栈</td><td>TypeScript 5.4、Node/VS Code Extension Host、ES2022 CommonJS</td><td>IDEA 版需改写为 Kotlin/JVM 21，不能直接运行现有 TypeScript。</td></tr>
+            <tr><td>入口</td><td><code>src/extension.ts</code>，约 879 行，负责命令注册和事务编排</td><td>拆分为 Action、UseCase、Service，避免继续形成单体入口。</td></tr>
+            <tr><td>DevOps 适配器</td><td><code>CompanyDevOpsAdapter.ts</code>，约 1302 行</td><td>是迁移工作量最大的单文件，应按认证、查询、任务、工时、日报拆分客户端。</td></tr>
+            <tr><td>交互层</td><td>QuickPick/InputBox 串行流程，共约 1931 行</td><td>用 DialogWrapper + Kotlin UI DSL 重构，不逐步骤翻译。</td></tr>
+            <tr><td>区域规则</td><td><code>locations.ts</code>，约 1029 行，内置省市字典</td><td>可机械转换为 Kotlin 静态数据与纯函数，适合高覆盖单元测试。</td></tr>
+            <tr><td>构建发布</td><td><code>tsc</code> 编译到 <code>dist</code>；VS Code 扩展包</td><td>改为 Gradle <code>buildPlugin</code> 输出 ZIP。</td></tr>
+            <tr><td>测试</td><td>仓库未发现自动化测试目录或测试脚本</td><td>迁移时必须补领域规则、格式化、解析和 Git 状态机测试。</td></tr>
+          </tbody>
+        </table>
+        <p>源码约 6,266 行 TypeScript。当前工作树中的 <code>dist/vscode/PushDayWorkFlow.js</code> 及其 source map 已有未提交修改，本次分析未改动这些文件。</p>
+      </section>
+
+      <section class="doc-section" id="architecture">
+        <h2>3. 当前架构</h2>
+        <div class="architecture">
+          <div class="layer"><strong>VS Code 入口层</strong>：命令注册、通知、进度、浏览器/剪贴板、ExtensionContext。</div>
+          <div class="layer"><strong>Flow 交互层</strong>：QuickPickFlow、DailyTaskFlow、PushDayWorkFlow、RegionCheckFlow、TaskTemplateFlow。</div>
+          <div class="layer"><strong>业务与策略层</strong>：commit 模板、工时追加/覆盖、任务类型映射、区域合规规则、Git 恢复策略。</div>
+          <div class="layer"><strong>DevOps 接入层</strong>：CompanyDevOpsAdapter、会话 Cookie、pageId、响应解析、字段映射。</div>
+          <div class="layer"><strong>基础设施</strong>：Node fetch、child_process 调 Git、SecretStorage、globalState、OutputChannel。</div>
+        </div>
+        <h3>当前优点</h3>
+        <ul>
+          <li>已经抽象出 <code>DevOpsProvider</code> 接口，领域模型与供应商适配器基本分离。</li>
+          <li>commit 格式化、区域规则、缓存、映射存储均有独立文件，便于迁移。</li>
+          <li>推送失败时具备 soft reset 恢复意识，能避免部分本地数据损失。</li>
+          <li>API 的多个 <code>pageId</code>、两阶段任务查询、非标准 JSON 等踩坑已沉淀在代码中。</li>
+        </ul>
+        <h3>当前耦合点</h3>
+        <ul>
+          <li><code>extension.ts</code> 同时处理 UI、Git、事务和错误展示。</li>
+          <li>Flow 直接访问 VS Code API，无法脱离 UI 做流程测试。</li>
+          <li>部分日期、默认值和映射散落在多个文件，存在行为不一致风险。</li>
+          <li>HTTP 解析使用 JavaScript <code>Function()</code> 执行响应，迁移到 Java 21 时不能原样复用。</li>
+        </ul>
+      </section>
+
+      <section class="doc-section" id="features">
+        <h2>4. 完整功能清单</h2>
+        <table>
+          <thead><tr><th>#</th><th>命令</th><th>前置条件</th><th>实际结果</th><th>IDEA 迁移级别</th></tr></thead>
+          <tbody>
+            <tr><td>F01</td><td>初始化 DevOps 账号</td><td>用户名、登录接口中的 password 密文</td><td>保存安全凭据</td><td><span class="badge ok">必须</span></td></tr>
+            <tr><td>F02</td><td>关联任务并推送</td><td>Git 仓库、未推送 commit</td><td>amend 最新 commit → push → 登记/更新工时</td><td><span class="badge ok">必须</span></td></tr>
+            <tr><td>F03</td><td>关联任务提交并推送</td><td>Git 仓库、已暂存改动</td><td>commit → push → 登记/更新工时</td><td><span class="badge ok">必须</span></td></tr>
+            <tr><td>F04</td><td>关联任务仅提交</td><td>Git 仓库、已暂存改动</td><td>本地 commit → 登记/更新工时</td><td><span class="badge ok">必须</span></td></tr>
+            <tr><td>F05</td><td>运维工时补录</td><td>Git 仓库、已暂存改动</td><td>创建 Task → commit → push（失败可继续）→ 登记工时</td><td><span class="badge ok">必须</span></td></tr>
+            <tr><td>F06</td><td>日常任务登记</td><td>已打开项目，不要求 Git</td><td>创建 Task → 登记工时</td><td><span class="badge ok">必须</span></td></tr>
+            <tr><td>F07</td><td>提交日报</td><td>已登录 DevOps</td><td>拉取今日工时/明日计划/逾期信息 → 生成并提交日报</td><td><span class="badge ok">必须</span></td></tr>
+            <tr><td>F08</td><td>区域合规检查</td><td>研发项目、产品</td><td>检查本周全部用户 Task 的标题与工时地名，输出报告</td><td><span class="badge ok">必须</span></td></tr>
+            <tr><td>F09</td><td>清除缓存</td><td>无</td><td>清缓存、版本记录、仓库映射、工作区映射；不清账号</td><td><span class="badge ok">必须</span></td></tr>
+            <tr><td>F10</td><td>版本升级提醒</td><td>配置开启</td><td>版本变化后通知并打开 GitHub Releases</td><td><span class="badge warn">平台化改造</span></td></tr>
+          </tbody>
+        </table>
+
+        <h3>关联工作项能力</h3>
+        <ul>
+          <li>工作项类型：Task / Bug。</li>
+          <li>默认加载当前登录用户的未完成项，并按产品分组。</li>
+          <li>支持按编号手动查询，不受任务所属人员限制。</li>
+          <li>展示预计工时、已发生工时、当前完成度和今日已有工时。</li>
+          <li>工时类型含 “AI” 时，commit 参数由 <code>-h:</code> 自动切为 <code>-aih:</code>。</li>
+        </ul>
+
+        <h3>创建 Task 能力</h3>
+        <ul>
+          <li>研发项目 → 产品 → 产品版本级联；标题尝试自动匹配区域；区域再级联实施项目。</li>
+          <li>工时类型自动映射到任务类型，映射表包含 45 组代码，未命中回退任务类型 <code>3</code>。</li>
+          <li>完成度低于 100% 时必须填写预计结束日期；预计工时按“含首尾日历天数 × 8h”计算。</li>
+          <li>任务内容支持简易、普通、标杆三种模式，标杆模式覆盖 11 个章节并生成 HTML。</li>
+          <li>运维命令使用 Git origin 记忆项目/产品；日常任务使用工作区路径记忆。</li>
+        </ul>
+      </section>
+
+      <section class="doc-section" id="flows">
+        <h2>5. 核心流程</h2>
+        <h3>5.1 已有 commit 重写并推送</h3>
+        <div class="flow">
+          <div class="node">选择仓库</div><div class="arrow">→</div>
+          <div class="node">检查 upstream / 未推送 commit</div><div class="arrow">→</div>
+          <div class="node">收集 DevOps 元数据</div><div class="arrow">→</div>
+          <div class="node">amend 最新 commit</div><div class="arrow">→</div>
+          <div class="node">push</div><div class="arrow">→</div>
+          <div class="node">新增或更新工时</div>
+        </div>
+        <p>push 失败会执行 <code>git reset --soft HEAD@{1}</code> 尝试恢复 amend 前状态；push 成功后工时失败则无法撤回远端提交。</p>
+
+        <h3>5.2 新建 commit 并推送</h3>
+        <div class="flow">
+          <div class="node">检查 staged changes</div><div class="arrow">→</div>
+          <div class="node">收集 DevOps 元数据</div><div class="arrow">→</div>
+          <div class="node">git commit</div><div class="arrow">→</div>
+          <div class="node">push</div><div class="arrow">→</div>
+          <div class="node">新增或更新工时</div>
+        </div>
+        <p>push 失败会执行 <code>git reset --soft HEAD~1</code>，将提交恢复为暂存改动。</p>
+
+        <h3>5.3 运维工时补录</h3>
+        <div class="flow">
+          <div class="node">收集任务和 Git 信息</div><div class="arrow">→</div>
+          <div class="node">创建 DevOps Task</div><div class="arrow">→</div>
+          <div class="node">git commit</div><div class="arrow">→</div>
+          <div class="node">push（失败不阻断）</div><div class="arrow">→</div>
+          <div class="node">登记工时</div>
+        </div>
+        <p>该流程与普通提交的失败语义不同：任务一旦创建不回滚；push 失败也继续登记工时，并提示手动 push。</p>
+
+        <h3>5.4 日常任务登记</h3>
+        <p>不依赖 Git。按工作区路径预填项目/产品，创建 Task 后登记所选工时类型。工时登记失败不会删除已创建的 Task。</p>
+
+        <h3>5.5 区域检查</h3>
+        <p>选择研发项目和产品，查询本周全部状态、全部用户的 Task；逐项拉取工时后，将任务标题和工时内容合并做静态地名检查。规则 A 检查区域维度，规则 B 检查实施项目主地点。当前报告写入 VS Code OutputChannel。</p>
+      </section>
+
+      <section class="doc-section" id="rules">
+        <h2>6. 关键业务规则</h2>
+        <h3>6.1 commit message</h3>
+        <pre><code>${COMMIT_TYPE}:${SUBJECT} scrum -e ${CODE} -h:${HOURS} -s:${PROGRESS}</code></pre>
+        <p>必需变量为 <code>${COMMIT_TYPE}</code>、<code>${SUBJECT}</code>、<code>${CODE}</code>、<code>${HOURS}</code>、<code>${PROGRESS}</code>；另支持 <code>${TYPE}</code>、<code>${PROJECT}</code>。Merge 会从 <code>Merge:</code> 修正为 <code>Merge </code>。</p>
+        <p>合法类型：feat、fix、perf、refactor、test、style、build、chore、upd、doc、Merge。最终消息要求 10–500 字符，包含小写指令 <code>scrum -e</code>。</p>
+
+        <h3>6.2 工时和完成度</h3>
+        <table>
+          <thead><tr><th>字段</th><th>append</th><th>overwrite</th><th>默认</th></tr></thead>
+          <tbody>
+            <tr><td>工时</td><td>今日已有工时 + 本次输入</td><td>用本次输入替换</td><td>append</td></tr>
+            <tr><td>工作描述</td><td>已有内容 + 换行 + <code>• subject</code></td><td>仅 <code>• subject</code></td><td>append</td></tr>
+            <tr><td>完成度</td><td>已有百分比 + 本次输入，上限 100%</td><td>用本次输入替换</td><td>overwrite</td></tr>
+          </tbody>
+        </table>
+
+        <h3>6.3 区域规则</h3>
+        <ul>
+          <li>“共同区域”任务的标题和工时内容不得出现任何地名。</li>
+          <li>指定省份的任务不得出现其他省份或其城市。</li>
+          <li>实施项目名称提取出的主地点不得与文本中其他地点冲突。</li>
+          <li>省份修饰同省城市视为合法，例如“广西柳州”。</li>
+          <li>比较时归一化“市/省”后缀，地名按长度优先匹配，避免短名称误命中。</li>
+        </ul>
+      </section>
+
+      <section class="doc-section" id="data">
+        <h2>7. 配置与数据存储</h2>
+        <table>
+          <thead><tr><th>键</th><th>默认值</th><th>作用</th><th>范围</th></tr></thead>
+          <tbody>
+            <tr><td><code>commitTemplate</code></td><td>规范模板</td><td>生成 commit message</td><td>VS Code 设置</td></tr>
+            <tr><td><code>requestTimeoutMs</code></td><td>10000</td><td>DevOps 请求超时</td><td>VS Code 设置</td></tr>
+            <tr><td><code>cacheTtlMs</code></td><td>300000</td><td>部分字典缓存 TTL</td><td>VS Code 设置</td></tr>
+            <tr><td><code>workHourMode</code></td><td>append</td><td>工时累加/覆盖</td><td>VS Code 设置</td></tr>
+            <tr><td><code>workContentMode</code></td><td>append</td><td>描述追加/覆盖</td><td>VS Code 设置</td></tr>
+            <tr><td><code>progressMode</code></td><td>overwrite</td><td>完成度累加/覆盖</td><td>VS Code 设置</td></tr>
+            <tr><td><code>taskCreateMode</code></td><td>simple</td><td>简易/普通/标杆任务内容</td><td>VS Code 设置</td></tr>
+            <tr><td><code>debugMode</code></td><td>false</td><td>API 调试日志</td><td>VS Code 设置</td></tr>
+            <tr><td><code>upgradeReminder</code></td><td>false</td><td>版本变化提醒</td><td>VS Code 设置</td></tr>
+          </tbody>
+        </table>
+        <p>用户名和 password 密文分别保存在 VS Code SecretStorage；普通设置、仓库映射、工作区映射和最后版本号不属于敏感信息。DevOps 会话 Cookie 只保存在运行期内存。</p>
+        <div class="callout warn"><strong>“清除缓存”不等于“退出登录”。</strong>当前命令不会删除 SecretStorage 中的用户名和 password 密文，但会清掉版本记录以及两类项目映射。IDEA 版应在 UI 上把“清缓存”“清映射”“删除账号”拆开表达。</div>
+      </section>
+
+      <section class="doc-section" id="api">
+        <h2>8. DevOps API 特征</h2>
+        <p>服务根地址固定为 <code>https://devops.ctjsoft.com</code>。认证通过 <code>POST /login</code>，请求为 FormData，字段含 username、password、<code>loginType=password</code>；响应需提取 Set-Cookie 和 userId。</p>
+        <table>
+          <thead><tr><th>模块</th><th>pageId</th><th>主要能力</th></tr></thead>
+          <tbody>
+            <tr><td>部门工作项 / 工时</td><td><code>h7BdNkJ</code></td><td>任务查询、按编号查询、工时列表、新增/修改工时、工时类型</td></tr>
+            <tr><td>研发任务创建</td><td><code>AbY8d4R</code></td><td>研发项目、产品、区域、实施项目、版本、模块、人员、创建 Task</td></tr>
+            <tr><td>日报</td><td><code>wlrFlaF</code></td><td>今日工作、明日计划、工时校验、逾期任务、提交日报</td></tr>
+          </tbody>
+        </table>
+        <p>任务分组查询存在两阶段协议：第一次拿分组摘要，第二次带 <code>parentId</code>、<code>groupFieldValue</code> 等展开具体任务。<code>progressStatus=""</code> 表示全部状态。</p>
+        <div class="callout danger"><strong>非标准响应是迁移的首要技术风险。</strong>部分端点返回包含 JavaScript IIFE 的对象字面量，而不是 JSON。现有实现以 <code>Function()</code> 执行整个响应。Java 21 已无内置 Nashorn，IDEA 版必须提供受约束的兼容解析器，不能假设所有响应都是标准 JSON。</div>
+      </section>
+
+      <section class="doc-section" id="git">
+        <h2>9. Git 事务语义</h2>
+        <table>
+          <thead><tr><th>场景</th><th>成功顺序</th><th>失败恢复</th><th>不可逆点</th></tr></thead>
+          <tbody>
+            <tr><td>amend + push</td><td>amend → push → 工时</td><td>push 失败 soft reset 到 reflog 前态</td><td>push 成功后无法自动撤远端</td></tr>
+            <tr><td>commit + push</td><td>commit → push → 工时</td><td>push 失败 soft reset HEAD~1</td><td>push 成功后无法自动撤远端</td></tr>
+            <tr><td>commit only</td><td>commit → 工时</td><td>工时失败时当前实现不回滚 commit</td><td>本地 commit 已形成</td></tr>
+            <tr><td>运维补录</td><td>建 Task → commit → push → 工时</td><td>push 失败继续工时；无 Task 删除补偿</td><td>Task 创建即产生远端副作用</td></tr>
+            <tr><td>日常任务</td><td>建 Task → 工时</td><td>工时失败保留 Task</td><td>Task 创建即产生远端副作用</td></tr>
+          </tbody>
+        </table>
+        <p>无 upstream 时：列出 remotes；单 remote 自动选择，多 remote 让用户选择；远程分支默认本地分支，随后执行 set-upstream push。已有 upstream 时直接 push。</p>
+      </section>
+
+      <section class="doc-section" id="ux">
+        <h2>10. 当前 UI 问题分析</h2>
+        <h3>步骤过多</h3>
+        <p>关联任务流程通常需要 7 次左右 QuickPick/InputBox；创建 Task 在标杆模式下可能超过 20 次交互。用户无法一次看到完整输入，也难以返回修改前面的字段。</p>
+        <h3>动作文字与模式不一致</h3>
+        <p>元数据确认按钮固定写“确认并推送”，即使调用的是“仅提交”命令。任务模板标题也固定包含“运维工时补录”，日常任务场景中不够准确。</p>
+        <h3>上下文被拆散</h3>
+        <p>今日已有工时、项目/产品、任务信息、commit 预览分散在不同浮层。最终确认只有文本拼接，无法就地定位错误字段。</p>
+        <h3>结果依赖输出面板</h3>
+        <p>区域检查结果主要写到 OutputChannel。对于表格化筛选、复制问题项、打开任务详情并不友好。</p>
+        <h3>配置与账号割裂</h3>
+        <p>账号初始化通过命令完成，其他设置在 Settings。缺乏一个统一页面展示账号状态、测试连接、清缓存、清映射与诊断日志。</p>
+      </section>
+
+      <section class="doc-section" id="risks">
+        <h2>11. 已识别风险与缺口</h2>
+        <table>
+          <thead><tr><th>级别</th><th>问题</th><th>影响</th><th>IDEA 设计处理</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge danger">高</span></td><td>非标准 JavaScript 响应依赖 <code>Function()</code></td><td>Kotlin/JVM 无法直接解析；执行服务端脚本有安全风险</td><td>JSON 优先；仅固定域名/固定端点启用受限兼容解析；限制体积、超时与可执行语法，并测试真实样本</td></tr>
+            <tr><td><span class="badge danger">高</span></td><td>多系统副作用不具备原子性</td><td>可能出现代码已推送但工时失败，或 Task 已建但 commit 失败</td><td>显式步骤状态、幂等重试入口、失败结果摘要；不承诺伪事务</td></tr>
+            <tr><td><span class="badge warn">中</span></td><td>多数日期使用 UTC <code>toISOString()</code></td><td>Asia/Shanghai 00:00–07:59 可能登记到前一天</td><td>统一 <code>ZoneId.of("Asia/Shanghai")</code></td></tr>
+            <tr><td><span class="badge warn">中</span></td><td><code>getTasks()</code> 每次请求，tasks Map 未读取</td><td>配置名宣称任务缓存但实际未命中</td><td>明确任务列表默认实时，手动刷新；字典类按 TTL 缓存</td></tr>
+            <tr><td><span class="badge warn">中</span></td><td>已有仓库映射后选择“重新选择”不会覆盖旧映射</td><td>下次仍出现旧项目/产品</td><td>确认提交时始终更新当前映射</td></tr>
+            <tr><td><span class="badge warn">中</span></td><td>运维补录所选工时类型用于 commit，但登记工时时强制寻找“代码编写”</td><td>界面选择与实际登记类型可能不一致</td><td>作为待确认行为，建议改为登记所选类型</td></tr>
+            <tr><td><span class="badge warn">中</span></td><td>简易模式仍把未询问章节写入默认占位文案</td><td>Task 内容可能冗长且含指导语</td><td>建议简易模式仅写真实输入章节；保留兼容开关</td></tr>
+            <tr><td><span class="badge">低</span></td><td>区域检查强制诊断日志</td><td>日志较多，可能包含内部任务信息</td><td>结果表默认；详细请求日志仅 debug 开启且脱敏</td></tr>
+            <tr><td><span class="badge">低</span></td><td>README 的“三种推送模式”实际列出四行</td><td>用户文档与实现轻微不一致</td><td>IDEA 使用文档按功能矩阵生成</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="doc-section" id="migration">
+        <h2>12. 迁移判断</h2>
+        <table>
+          <thead><tr><th>模块</th><th>迁移方式</th><th>难度</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>领域模型、commit 格式</td><td>按类型等价重写</td><td>低</td><td>纯数据与字符串规则</td></tr>
+            <tr><td>工时计算、任务类型映射</td><td>纯函数迁移并补测试</td><td>低</td><td>适合参数化测试</td></tr>
+            <tr><td>区域地名字典与规则</td><td>机械转换 + golden tests</td><td>中</td><td>数据量大但逻辑稳定</td></tr>
+            <tr><td>DevOps 标准 JSON API</td><td>OkHttp/JDK HttpClient + Jackson/kotlinx serialization</td><td>中</td><td>需保持 header、FormData、Cookie、pageId</td></tr>
+            <tr><td>非标准响应</td><td>新增兼容解析层</td><td>高</td><td>必须基于真实响应样本验证</td></tr>
+            <tr><td>Git</td><td>Git4Idea 发现仓库 + 受控 Git CLI 执行</td><td>中</td><td>保持命令语义，减少使用内部 API 风险</td></tr>
+            <tr><td>SecretStorage/globalState</td><td>PasswordSafe + PersistentStateComponent</td><td>低</td><td>平台有标准替代</td></tr>
+            <tr><td>多步骤 UI</td><td>重新设计单弹窗，而非逐 API 翻译</td><td>高</td><td>涉及异步级联、状态、校验和结果反馈</td></tr>
+          </tbody>
+        </table>
+        <div class="callout ok"><strong>推荐实现边界。</strong>首期完整覆盖 F01–F09；F10 不复刻 VS Code 的“比较本地版本再跳 GitHub”，而是优先采用 IDEA 标准插件更新机制。平台相关行为改变，但用户目标和最终能力更一致。</div>
+      </section>
+
+      <section class="doc-section" id="evidence">
+        <h2>13. 分析依据</h2>
+        <p>本地源码重点文件：</p>
+        <ul>
+          <li><code>package.json</code>、<code>README.md</code>、<code>CHANGELOG.md</code>、<code>CLAUDE.md</code></li>
+          <li><code>src/extension.ts</code>、<code>src/core/DevOpsProvider.ts</code>、<code>src/core/providers/CompanyDevOpsAdapter.ts</code></li>
+          <li><code>src/vscode/QuickPickFlow.ts</code>、<code>DailyTaskFlow.ts</code>、<code>TaskTemplateFlow.ts</code></li>
+          <li><code>RegionCheckFlow.ts</code>、<code>PushDayWorkFlow.ts</code>、<code>ConfigManager.ts</code>、<code>AmendStrategy.ts</code></li>
+        </ul>
+        <p class="muted small">分析时间：2026-08-23（Asia/Shanghai）。本文不包含对 DevOps 生产接口的实际调用，API 行为依据现有源码与项目内记录。</p>
+      </section>
+    </article>
+  </div>
+  <div class="footer">下一篇：<a href="02-idea-plugin-design.html">IDEA 插件设计方案 →</a></div>
+</main>
+</body>
+</html>

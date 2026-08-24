@@ -1,0 +1,46 @@
+<idea-plugin>
+    <id>com.ctjsoft.devops.issue-link-push</id>
+    <name>Issue Link Push</name>
+    <vendor>CTJSoft</vendor>
+
+    <description><![CDATA[
+        Integrates IntelliJ IDEA Git workflows with the CTJSoft DevOps task system.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.vcs</depends>
+    <depends>Git4Idea</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationConfigurable id="com.ctjsoft.devops.issue-link-push.settings"
+                                 displayName="Issue Link Push"
+                                 instance="com.ctjsoft.devops.settings.IssueLinkPushConfigurable"/>
+        <notificationGroup id="Issue Link Push" displayType="BALLOON"/>
+        <postStartupActivity implementation="com.ctjsoft.devops.action.UpgradeReminderActivity"/>
+    </extensions>
+
+    <actions>
+        <group id="IssueLinkPush.Menu" text="Issue Link Push" popup="true">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <action id="IssueLinkPush.SubmitWithDevOpsTask" class="com.ctjsoft.devops.action.SubmitWithDevOpsTaskAction"
+                    text="关联 DevOps 任务并推送"/>
+            <action id="IssueLinkPush.CommitAndPush" class="com.ctjsoft.devops.action.CommitAndPushAction"
+                    text="关联 DevOps 任务提交并推送"/>
+            <action id="IssueLinkPush.CommitOnly" class="com.ctjsoft.devops.action.CommitOnlyAction"
+                    text="关联 DevOps 任务仅提交"/>
+            <action id="IssueLinkPush.DailyReport" class="com.ctjsoft.devops.action.DailyReportAction"
+                    text="提交日报"/>
+            <action id="IssueLinkPush.OpsWorkHourRecord" class="com.ctjsoft.devops.action.OpsWorkHourRecordAction"
+                    text="运维工时补录"/>
+            <action id="IssueLinkPush.DailyTask" class="com.ctjsoft.devops.action.DailyTaskAction"
+                    text="日常任务登记"/>
+            <action id="IssueLinkPush.RegionCheck" class="com.ctjsoft.devops.action.RegionCheckAction"
+                    text="区域合规检查"/>
+            <separator/>
+            <action id="IssueLinkPush.InitializeDevOps" class="com.ctjsoft.devops.action.InitializeDevOpsAction"
+                    text="初始化 DevOps 账号"/>
+            <action id="IssueLinkPush.ClearCache" class="com.ctjsoft.devops.action.ClearCacheAction"
+                    text="清除 DevOps 缓存"/>
+        </group>
+    </actions>
+</idea-plugin>

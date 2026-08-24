@@ -1,0 +1,15 @@
+.gradle/
+.intellijPlatform/
+.kotlin/
+.idea/
+build/
+out/
+*.iml
+
+# HAR contains internal task/person data; keep it only as local analysis evidence.
+docs/*.har
+
+# Local runtime and credentials
+local.properties
+*.jks
+*.keystore

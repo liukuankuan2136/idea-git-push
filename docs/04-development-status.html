@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Issue Link Push for IDEA — 开发与验证状态</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">Issue Link Push · IDEA Migration</div>
+      <nav class="nav">
+        <a href="index.html">文档首页</a>
+        <a href="01-current-plugin-analysis.html">现状分析</a>
+        <a href="02-idea-plugin-design.html">设计方案</a>
+        <a href="03-confirmation-checklist.html">确认清单</a>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <span class="eyebrow">开发状态 · 2026-08-23</span>
+      <h1>本机环境可开发，首版插件已构建并完成离线验证</h1>
+      <p>目标平台锁定 IntelliJ IDEA Ultimate 2026.1.4。当前产物已通过编译、22 项自动测试、HAR 真实响应兼容测试和 IDEA 沙箱加载检查；真实 DevOps 写入与真实远端 push 仍需使用者账号执行最终验收。</p>
+      <div class="meta-grid">
+        <div class="meta-item"><strong>插件版本</strong>0.1.0</div>
+        <div class="meta-item"><strong>目标构建</strong>IU-261.26222.65</div>
+        <div class="meta-item"><strong>自动测试</strong>22 / 22 通过</div>
+        <div class="meta-item"><strong>构建产物</strong>282,269 bytes</div>
+      </div>
+    </section>
+
+    <section class="doc-section">
+      <h2>1. 本机开发与验证环境</h2>
+      <table>
+        <thead><tr><th>项目</th><th>检测结果</th><th>结论</th></tr></thead>
+        <tbody>
+          <tr><td>IntelliJ IDEA</td><td>Ultimate 2026.1.4，<code>IU-261.26222.65</code>，<code>D:\softFile\idea-2026.1.4.win</code></td><td>满足唯一目标版本</td></tr>
+          <tr><td>JDK</td><td>完整 JDK 21.0.11，<code>D:\softFile\jdk\jdk-21.0.11</code></td><td>满足编译和测试</td></tr>
+          <tr><td>Gradle</td><td>Wrapper 9.0.0；分发包按官方 SHA-256 校验</td><td>无需全局安装 Gradle</td></tr>
+          <tr><td>Kotlin / 平台插件</td><td>Kotlin 2.2.20 / IntelliJ Platform Gradle Plugin 2.18.1</td><td>已实际构建</td></tr>
+          <tr><td>Git</td><td>2.55.0</td><td>满足 Git 集成与临时仓库测试</td></tr>
+        </tbody>
+      </table>
+      <div class="callout ok"><strong>环境结论。</strong>本机没有缺少开发所需组件，因此已经继续开发。Gradle 未全局安装不是缺项，仓库自带 Wrapper。</div>
+    </section>
+
+    <section class="doc-section">
+      <h2>2. 已实现功能</h2>
+      <table>
+        <thead><tr><th>Tools → Issue Link Push</th><th>实现状态</th><th>关键行为</th></tr></thead>
+        <tbody>
+          <tr><td>关联 DevOps 任务并推送</td><td>已实现</td><td>amend 未推送 commit、push、登记/修改工时；push 失败执行恢复</td></tr>
+          <tr><td>关联 DevOps 任务提交并推送</td><td>已实现</td><td>校验 staged changes、commit、push、登记/修改工时</td></tr>
+          <tr><td>关联 DevOps 任务仅提交</td><td>已实现</td><td>本地 commit 后登记/修改工时</td></tr>
+          <tr><td>提交日报</td><td>已实现</td><td>今日工时、明日计划、工时校验、逾期提醒、提交日报</td></tr>
+          <tr><td>运维工时补录</td><td>已实现</td><td>单弹窗创建 Task、提交、推送并按用户选择类型登记工时（C04）</td></tr>
+          <tr><td>日常任务登记</td><td>已实现</td><td>无需 Git，创建 Task 并登记工时</td></tr>
+          <tr><td>区域合规检查</td><td>已实现</td><td>产品任务、工时内容、区域规则 A 与实施项目规则 B</td></tr>
+          <tr><td>初始化 DevOps 账号</td><td>已实现</td><td>设置页保存用户名和 password 密文；PasswordSafe 存储</td></tr>
+          <tr><td>清除 DevOps 缓存</td><td>已实现</td><td>清会话、TTL 列表缓存、升级版本记录、仓库/工作区产品映射，不删凭据</td></tr>
+        </tbody>
+      </table>
+      <ul>
+        <li>普通 Task/Bug 列表固定使用 <code>groupId=6</code>、<code>groupField=executeUser</code>，没有增加网页端参数抽象。</li>
+        <li>不实现也不调用 <code>/modify/task</code>；它不属于本插件登记工时的职责。</li>
+        <li>C05 按 VS Code 现状实现：简易/普通模式未显示的章节仍写入默认指导文案。</li>
+        <li>仓库 origin 与工作区路径分别记忆研发项目/产品；级联字典使用可配置 TTL 缓存。</li>
+        <li>升级提醒可选；检测到插件版本变化时提示进行关键流程冒烟。</li>
+      </ul>
+    </section>
+
+    <section class="doc-section">
+      <h2>3. 验证结果与边界</h2>
+      <table>
+        <thead><tr><th>验证项</th><th>结果</th><th>覆盖范围</th></tr></thead>
+        <tbody>
+          <tr><td>自动测试</td><td>22 / 22 通过，0 failure，0 error</td><td>解析、commit 格式、工时、模板、区域、TTL 缓存、API 契约、Git 事务</td></tr>
+          <tr><td>HAR 兼容</td><td>3 / 3 真实 IIFE 响应通过</td><td>增量 HAR 中可用于断言的非标准响应；HAR 本身不打包</td></tr>
+          <tr><td>Git 集成</td><td>通过</td><td>真实临时仓库的 staged、commit、amend、恢复与校验</td></tr>
+          <tr><td>工程检查</td><td>通过</td><td><code>test</code>、<code>buildPlugin</code>、<code>verifyPluginProjectConfiguration</code></td></tr>
+          <tr><td>IDEA 沙箱</td><td>通过</td><td>目标 IDEA 可加载 <code>Issue Link Push (0.1.0)</code>；未出现本插件类加载异常</td></tr>
+          <tr><td>Plugin Verifier</td><td>受本机发行布局限制</td><td>已识别目标 IU；解析本机缺失的无关 Ultimate 模块时会访问 JetBrains CDN，未取得完整报告</td></tr>
+          <tr><td>真实 DevOps / push</td><td>待人工验收</td><td>未使用用户凭据，也没有擅自创建任务、写工时、交日报或推送远端</td></tr>
+        </tbody>
+      </table>
+      <div class="callout warn"><strong>保留的工程警告。</strong>平台建议移除 <code>untilBuild</code> 以扩大未来版本兼容，但本项目明确只支持 2026.1，因此有意保留 <code>261.*</code> 上界。沙箱自身还会输出目标 IDEA 发行布局/主题的警告，当前没有指向 <code>com.ctjsoft</code> 插件代码的异常。</div>
+    </section>
+
+    <section class="doc-section">
+      <h2>4. 安装、配置与升级</h2>
+      <ol>
+        <li>IDEA 打开 <strong>Settings → Plugins</strong>，点击齿轮，选择 <strong>Install Plugin from Disk…</strong>。</li>
+        <li>选择 <code>D:\code\my-workspace\git-push-idea\build\distributions\git-push-idea-0.1.0.zip</code>，按 IDEA 提示重启。</li>
+        <li>进入 <strong>Settings → Tools → Issue Link Push</strong>，填写 DevOps 用户名和浏览器登录请求中的 password 密文，并设置 commit 模板、超时、缓存、追加/覆盖模式与任务模板模式。</li>
+        <li>日常使用从 <strong>Tools → Issue Link Push</strong> 进入；Git 类命令执行前先在 IDEA 中暂存改动。</li>
+        <li>升级时构建更高版本 ZIP，再次使用 <strong>Install Plugin from Disk…</strong> 覆盖。设置和 PasswordSafe 凭据会保留；降级前建议备份 IDEA 设置目录。</li>
+      </ol>
+      <table>
+        <tbody>
+          <tr><th>安装包</th><td><code>build/distributions/git-push-idea-0.1.0.zip</code></td></tr>
+          <tr><th>大小</th><td>282,269 bytes</td></tr>
+          <tr><th>SHA-256</th><td><code>628798E85A27A4FE5F774D20A8E313D9FC43E6C7678FB60D1FD5FBDFFD0A66AA</code></td></tr>
+          <tr><th>敏感文件</th><td><code>docs/*.har</code>、本地凭据文件、构建沙箱均已由 <code>.gitignore</code> 排除；ZIP 不包含 HAR 或凭据</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="doc-section">
+      <h2>5. 建议的最终人工验收顺序</h2>
+      <ol>
+        <li>先配置账号，执行一次“关联 DevOps 任务仅提交”，核对 commit 文本和新增工时。</li>
+        <li>在测试分支验证“提交并推送”和“amend 并推送”，同时模拟一次 push 失败确认恢复提示。</li>
+        <li>分别以简易、普通、标杆模式创建测试任务，重点核对 C04 工时类型与 C05 隐藏章节。</li>
+        <li>提交一条可撤销的测试日报，并核对工时不足与逾期提示。</li>
+        <li>选取已知区域异常样本运行区域检查，与网页端人工结果比对。</li>
+        <li>确认无误后将 <code>git-push-idea</code> 初始化为 Git 仓库；不要提交 HAR、凭据、<code>build</code> 或沙箱目录。</li>
+      </ol>
+    </section>
+
+    <div class="footer">项目目录：D:\code\my-workspace\git-push-idea · 文档与代码状态基于 2026-08-23 本机验证</div>
+  </main>
+</body>
+</html>

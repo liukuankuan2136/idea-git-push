@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Issue Link Push for IDEA — 方案文档</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">Issue Link Push · IDEA Migration</div>
+      <nav class="nav">
+        <a href="01-current-plugin-analysis.html">现状分析</a>
+        <a href="02-idea-plugin-design.html">设计方案</a>
+        <a href="03-confirmation-checklist.html">确认清单</a>
+        <a href="04-development-status.html">开发与验证</a>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <span class="eyebrow">首版实现与验证稿 · 2026-08-23</span>
+      <h1>从 VS Code 多步骤流程，迁移为 IDEA 单弹窗工作流</h1>
+      <p>本套文档基于当前 <code>git-push</code> 源码逐项盘点，并针对本机 IntelliJ IDEA Ultimate 2026.1.4 完成首版实现。分析、设计、确认结论、构建产物与验证边界均已归档。</p>
+      <div class="meta-grid">
+        <div class="meta-item"><strong>现有插件</strong>Issue Link Push 0.3.12</div>
+        <div class="meta-item"><strong>目标 IDE</strong>IntelliJ IDEA Ultimate 2026.1.4</div>
+        <div class="meta-item"><strong>目标构建</strong>IU-261.26222.65 / Java 21</div>
+        <div class="meta-item"><strong>设计原则</strong>功能等价、单窗完成、安全可恢复</div>
+      </div>
+    </section>
+
+    <section class="card-grid">
+      <article class="card">
+        <span class="badge brand">文档 01</span>
+        <h2>现有插件分析</h2>
+        <p>覆盖 9 个命令、DevOps API、Git 事务、缓存与映射、任务模板、日报、区域检查，以及源码中已识别的边界问题。</p>
+        <p><a href="01-current-plugin-analysis.html">打开现状分析 →</a></p>
+      </article>
+      <article class="card">
+        <span class="badge brand">文档 02</span>
+        <h2>IDEA 插件设计</h2>
+        <p>覆盖版本支持、技术栈、架构、单弹窗 UI、功能清单、使用与配置、安装升级、异常恢复、测试验收和实施阶段。</p>
+        <p><a href="02-idea-plugin-design.html">打开设计方案 →</a></p>
+      </article>
+      <article class="card">
+        <span class="badge brand">文档 03</span>
+        <h2>确认清单</h2>
+        <p>集中记录 C01–C05 的产品决策、HAR 增量证据，以及固定使用 <code>groupId=6</code> / <code>groupField=executeUser</code> 的结论。</p>
+        <p><a href="03-confirmation-checklist.html">打开确认清单 →</a></p>
+      </article>
+      <article class="card">
+        <span class="badge brand">文档 04</span>
+        <h2>开发与验证状态</h2>
+        <p>列出本机环境、已实现功能、自动测试、HAR 验证、沙箱结果、安装包校验值，以及仍需真实账号完成的手工验收。</p>
+        <p><a href="04-development-status.html">打开开发状态 →</a></p>
+      </article>
+    </section>
+
+    <section class="doc-section" style="margin-top:24px">
+      <h2>结论先行</h2>
+      <div class="decision-grid">
+        <div>
+          <h3>可迁移</h3>
+          <p>核心业务逻辑没有依赖 VS Code 特有能力；DevOps 访问、提交信息生成、区域规则和工时计算均可直接按领域逻辑重写为 Kotlin。</p>
+        </div>
+        <div>
+          <h3>不建议逐屏照搬</h3>
+          <p>VS Code 的 QuickPick/InputBox 造成一个功能连续弹出 7–20 次。IDEA 版本应按业务动作使用一个 <code>DialogWrapper</code>，在窗内完成级联、校验、预览和执行。</p>
+        </div>
+        <div>
+          <h3>先做本机定向版</h3>
+          <p>构建基线锁定本机 <code>261.26222.65</code>，兼容上界为 <code>261.*</code>。不承诺 2025.x、2026.2 或其他 JetBrains IDE。</p>
+        </div>
+        <div>
+          <h3>升级走私有 ZIP</h3>
+          <p>首期通过 <em>Install Plugin from Disk</em> 安装覆盖；稳定后可增加公司 HTTPS 自定义插件仓库，实现 IDEA 内自动发现更新。</p>
+        </div>
+      </div>
+    </section>
+
+    <div class="footer">文档目录：D:\code\my-workspace\git-push-idea\docs</div>
+  </main>
+</body>
+</html>

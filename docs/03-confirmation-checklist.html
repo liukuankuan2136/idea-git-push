@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>03 · 方案确认清单</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main class="shell">
+  <header class="topbar">
+    <div class="brand"><a href="index.html">Issue Link Push · IDEA Migration</a></div>
+    <nav class="nav"><a href="index.html">首页</a><a href="01-current-plugin-analysis.html">现状分析</a><a href="02-idea-plugin-design.html">设计方案</a></nav>
+  </header>
+
+  <section class="hero">
+    <span class="eyebrow">文档 03 · Review Checklist</span>
+    <h1>方案确认清单</h1>
+    <p>以下项目是设计中主动做出的产品/兼容性选择。若无特别修改，进入开发时将按“推荐方案”执行。增量 HAR 与任务列表协议边界已于 2026-08-23 补充确认。</p>
+  </section>
+
+  <section class="doc-section">
+    <h2>当前确认状态</h2>
+    <div class="callout ok"><strong>协议材料不再阻塞开发。</strong>普通任务列表固定使用 VS Code 的 <code>groupId=6 / groupField=executeUser</code>；不兼容网页端 <code>groupId=1</code>；忽略详情页保存产生的 <code>/modify/task</code>；增量 HAR 已满足真实 IIFE 样本要求。</div>
+    <div class="callout ok"><strong>确认项已全部收敛。</strong>C04 按推荐方案：登记用户实际选择的工时类型；C05 按现状方案：继续写入未展示章节的默认指导文案。C01–C03、C06–C12 按推荐方案实施。</div>
+  </section>
+
+  <section class="doc-section">
+    <h2>建议直接确认的基线</h2>
+    <table>
+      <thead><tr><th>#</th><th>确认项</th><th>推荐方案</th><th>备选及影响</th></tr></thead>
+      <tbody>
+        <tr><td>C01</td><td>IDEA 兼容范围</td><td><strong>since 261.26222.65，until 261.*</strong>。保证当前本机，允许同分支修复版安装。</td><td>锁死到 261.26222.65 更严格，但 IDEA 小升级后插件立即不可安装。</td></tr>
+        <tr><td>C02</td><td>Git 主功能入口</td><td><strong>一个“关联 DevOps 工作项”入口</strong>，弹窗内切换仅提交/提交并推送/重写并推送。</td><td>保留三个独立入口更像 VS Code，但菜单更长；底层仍可复用同一弹窗。</td></tr>
+        <tr><td>C03</td><td>交互方式</td><td><strong>一个业务一个主弹窗</strong>，不再额外弹最终确认框；预览和警告常驻弹窗。</td><td>对 amend 再弹一次确认更保守，但违背精简步骤目标。</td></tr>
+        <tr><td>C04<br><span class="badge ok">已确认</span></td><td>运维补录的工时类型</td><td><strong>最终方案：登记用户在弹窗中选择的工时类型</strong>，使 UI 与实际写入一致。</td><td>不保留现版强制“代码编写”的不一致行为。</td></tr>
+        <tr><td>C05<br><span class="badge ok">已确认</span></td><td>简易任务模板</td><td><strong>最终方案：保持 VS Code 现状</strong>，未展示章节继续写入模板默认指导文案。</td><td>不采用“只写实际填写章节”的精简方案。</td></tr>
+        <tr><td>C06</td><td>push 失败后的运维流程</td><td><strong>继续登记工时</strong>，结果标为部分成功，并提供手动 push 指令；保持现版语义。</td><td>push 失败即停止工时更“事务化”，但与当前业务习惯不同。</td></tr>
+        <tr><td>C07</td><td>Task 创建后的工时失败</td><td><strong>保留 Task，支持原窗重试工时</strong>，不尝试自动删除任务。</td><td>自动删除需要新增可靠删除接口与权限，风险更高。</td></tr>
+        <tr><td>C08</td><td>升级方式</td><td><strong>首期本地 ZIP 覆盖安装</strong>；稳定后再接公司 HTTPS 自定义插件仓库。</td><td>直接上 Marketplace 增加审核、公开性和维护成本。</td></tr>
+        <tr><td>C09</td><td>升级提醒</td><td><strong>使用 IDEA 标准插件更新机制</strong>，不复刻启动时跳 GitHub Releases 的通知。</td><td>保留自定义提醒会与 IDEA 更新提示重复。</td></tr>
+        <tr><td>C10</td><td>DevOps 地址</td><td><strong>固定为 https://devops.ctjsoft.com</strong>，设置页只读展示。</td><td>开放自定义地址会扩大安全与兼容范围，目前无明确需求。</td></tr>
+        <tr><td>C11</td><td>日期时区</td><td><strong>全功能统一 Asia/Shanghai</strong>，修复凌晨可能登记到前一天的问题。</td><td>机械复刻 UTC 行为会保留已知日期风险。</td></tr>
+        <tr><td>C12</td><td>IDEA 插件版本线</td><td><strong>从 0.1.0 独立起步</strong>，变更日志注明对齐 VS Code 0.3.12 能力。</td><td>使用 0.3.12-idea.1 更直观，但后续两端演进容易混淆。</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="doc-section">
+    <h2>开发开始前需要具备的材料</h2>
+    <ul class="checklist">
+      <li>确认上表 C01–C12，或指出需要调整的编号和目标行为。</li>
+      <li>保留当前 VS Code 仓库作为业务基线；开发期间若 VS Code 功能继续变化，需要明确同步截止版本。</li>
+      <li><strong>已满足：</strong><code>loadtask-savedaywork.har</code> 提供三份真实 IIFE 响应；开发前只需派生脱敏 fixture。</li>
+      <li>准备可用于开发验证的 DevOps 测试账号/任务，避免在真实工作项上反复创建测试数据。</li>
+      <li>确认 Git 测试远端，覆盖正常 push、首次 set-upstream 和故意 push 失败三类场景。</li>
+      <li>若启用私有自动升级，准备一个可通过 HTTPS 访问的插件文件地址。</li>
+    </ul>
+    <div class="callout ok"><strong>当前没有协议材料阻塞项。</strong>原始 HAR 只保留在本地取证目录并加入 <code>.gitignore</code>；自动化测试使用脱敏后的最小 fixture。</div>
+  </section>
+
+  <section class="doc-section">
+    <h2>确认后的默认实施顺序</h2>
+    <div class="flow">
+      <div class="node"><strong>P0</strong><br>本机工程与插件壳</div><div class="arrow">→</div>
+      <div class="node"><strong>P1</strong><br>领域规则与 DevOps 客户端</div><div class="arrow">→</div>
+      <div class="node"><strong>P2</strong><br>Git 主流程单弹窗</div><div class="arrow">→</div>
+      <div class="node"><strong>P3</strong><br>运维/日常任务</div><div class="arrow">→</div>
+      <div class="node"><strong>P4</strong><br>日报/区域检查</div><div class="arrow">→</div>
+      <div class="node"><strong>P5</strong><br>ZIP 发布与升级验证</div>
+    </div>
+    <p>每阶段以可运行、可验证的插件增量结束，不等所有 UI 都完成后才第一次连接 DevOps 或执行 Git。</p>
+  </section>
+
+  <section class="doc-section">
+    <h2>评审记录</h2>
+    <p>建议确认回复格式：</p>
+    <pre><code>总体：通过 / 需修改
+确认结果：C04 按推荐；C05 按现状
+补充需求：……</code></pre>
+    <p class="muted small">未特别指出的条目将按推荐方案实现。</p>
+  </section>
+
+  <div class="footer"><a href="02-idea-plugin-design.html">← 返回完整设计</a></div>
+</main>
+</body>
+</html>

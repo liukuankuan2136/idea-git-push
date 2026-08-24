@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>02 · IDEA 插件设计方案</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main class="shell">
+  <header class="topbar">
+    <div class="brand"><a href="index.html">Issue Link Push · IDEA Migration</a></div>
+    <nav class="nav"><a href="index.html">首页</a><a href="01-current-plugin-analysis.html">现状分析</a><a href="03-confirmation-checklist.html">确认清单</a></nav>
+  </header>
+
+  <section class="hero">
+    <span class="eyebrow">文档 02 · Solution Design</span>
+    <h1>IDEA 插件设计方案</h1>
+    <p>目标是在本机 IntelliJ IDEA Ultimate 2026.1.4 上提供与 VS Code 版业务能力等价的插件，并把串行 QuickPick/InputBox 改为“一项业务、一个主弹窗”。</p>
+  </section>
+
+  <div class="doc-layout">
+    <aside class="toc">
+      <strong>目录</strong>
+      <a href="#goals">1. 目标与原则</a>
+      <a href="#support">2. 版本支持</a>
+      <a href="#features">3. 功能设计</a>
+      <a href="#entry">4. 入口与使用方式</a>
+      <a href="#ux">5. 单弹窗 UI</a>
+      <a href="#architecture">6. 技术架构</a>
+      <a href="#project">7. 工程结构</a>
+      <a href="#devops">8. DevOps 接入</a>
+      <a href="#git">9. Git 与事务</a>
+      <a href="#storage">10. 配置与存储</a>
+      <a href="#async">11. 异步与状态</a>
+      <a href="#security">12. 安全与日志</a>
+      <a href="#errors">13. 错误与恢复</a>
+      <a href="#install">14. 构建安装</a>
+      <a href="#upgrade">15. 升级与回滚</a>
+      <a href="#testing">16. 测试验收</a>
+      <a href="#delivery">17. 实施阶段</a>
+      <a href="#sources">18. 官方依据</a>
+    </aside>
+
+    <article class="doc-main">
+      <section class="doc-section" id="goals">
+        <h2>1. 目标与设计原则</h2>
+        <h3>目标</h3>
+        <ul>
+          <li>完整覆盖 VS Code 0.3.12 的核心业务功能，而非只迁移 Git 提交部分。</li>
+          <li>在本机 IntelliJ IDEA Ultimate 2026.1.4 可稳定安装、运行和升级。</li>
+          <li>把同一业务流程的选择、输入、预览、执行和结果合并进一个主弹窗。</li>
+          <li>保留现有 DevOps 协议、commit 格式、工时模式、任务模板和区域检查规则。</li>
+          <li>明确跨 Git/DevOps 操作的部分成功状态，并提供可操作的恢复提示。</li>
+        </ul>
+        <h3>非目标</h3>
+        <ul>
+          <li>不兼容 VS Code 扩展包或复用其 UI 代码。</li>
+          <li>首期不承诺 IntelliJ IDEA 2025.x、2026.2+、Android Studio 或其他 JetBrains IDE。</li>
+          <li>首期不发布 JetBrains Marketplace；以本地 ZIP / 公司私有仓库为主。</li>
+          <li>不改变公司 DevOps 后端，也不引入 AI 服务。</li>
+        </ul>
+        <div class="callout ok"><strong>核心 UX 约束。</strong>一个用户动作最多出现一个业务主弹窗。字段级确认、项目切换、手动任务编号、commit 预览、执行进度和结果都在该弹窗内完成；只有系统级文件选择器或不可避免的 IDEA 安全提示不受此限制。</div>
+      </section>
+
+      <section class="doc-section" id="support">
+        <h2>2. 版本支持策略</h2>
+        <table>
+          <thead><tr><th>项目</th><th>设计值</th><th>说明</th></tr></thead>
+          <tbody>
+            <tr><td>产品</td><td>IntelliJ IDEA Ultimate</td><td>本机产品码 <code>IU</code>；以本地 IU 安装目录作为编译与沙箱平台。</td></tr>
+            <tr><td>本机版本</td><td><code>2026.1.4</code></td><td>来自本机 <code>product-info.json</code>。</td></tr>
+            <tr><td>本机构建号</td><td><code>IU-261.26222.65</code></td><td>插件开发与验证的唯一必测构建。</td></tr>
+            <tr><td><code>sinceBuild</code></td><td><code>261.26222.65</code></td><td>不承诺比本机更早的 2026.1 构建。</td></tr>
+            <tr><td><code>untilBuild</code></td><td><code>261.*</code></td><td>允许同一 2026.1 分支后续修复版安装，但只保证本机构建。</td></tr>
+            <tr><td>JVM</td><td>Java 21</td><td>IntelliJ Platform 261 要求 Java 21；使用本机 JBR。</td></tr>
+            <tr><td>操作系统</td><td>Windows x86_64</td><td>首期只对当前 Windows 环境验收；代码尽量不写死路径。</td></tr>
+            <tr><td>Git 插件</td><td><code>Git4Idea</code> 必需</td><td>本机自带版本与 IDEA 构建一致。</td></tr>
+          </tbody>
+        </table>
+        <div class="callout warn"><strong>兼容范围不等于质量承诺。</strong><code>261.*</code> 仅表示允许安装。每次 IDEA 2026.1 修复版更新后，应运行 Plugin Verifier 并做关键路径冒烟测试；升级到 2026.2 前必须发布新的兼容构建。</div>
+
+        <h3>插件身份与版本</h3>
+        <table>
+          <tbody>
+            <tr><th>插件名称</th><td>Issue Link Push</td></tr>
+            <tr><th>插件 ID</th><td><code>com.ctjsoft.devops.issue-link-push</code>（发布后永久保持不变）</td></tr>
+            <tr><th>IDEA 首版</th><td><code>0.1.0</code>，独立于 VS Code 的 <code>0.3.12</code> 版本线</td></tr>
+            <tr><th>配置 schema</th><td><code>1</code>，后续用于状态迁移</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="doc-section" id="features">
+        <h2>3. 功能设计与映射</h2>
+        <table>
+          <thead><tr><th>IDEA 功能入口</th><th>覆盖原命令</th><th>默认行为</th><th>结果</th></tr></thead>
+          <tbody>
+            <tr><td>关联 DevOps 工作项…</td><td>仅提交 / 提交并推送 / 重写并推送</td><td>弹窗顶部选择操作模式；默认“提交并推送”</td><td>规范 commit + 可选 push + 工时登记</td></tr>
+            <tr><td>创建运维任务并提交…</td><td>运维工时补录</td><td>单窗创建 Task、提交和推送</td><td>Task + commit + push + 工时</td></tr>
+            <tr><td>创建日常任务…</td><td>日常任务登记</td><td>不要求 Git</td><td>Task + 工时</td></tr>
+            <tr><td>提交日报…</td><td>提交日报</td><td>单窗展示今日工作并编辑计划</td><td>DevOps 日报</td></tr>
+            <tr><td>区域合规检查…</td><td>区域合规检查</td><td>同一弹窗中选范围、运行、看结果</td><td>可筛选结果表 + 复制报告</td></tr>
+            <tr><td>Issue Link Push 设置</td><td>初始化账号 / 清缓存 / 升级提醒</td><td>统一设置页</td><td>账号、模式、缓存和诊断管理</td></tr>
+          </tbody>
+        </table>
+
+        <h3>功能保留清单</h3>
+        <ul>
+          <li>Task/Bug 切换、按产品分组、标题/编号搜索、跨人员手动编号查询。</li>
+          <li>commit 类型、subject 校验、模板实时预览、复制提交信息。</li>
+          <li>工时类型、AI 工时参数、工时/描述/进度追加或覆盖。</li>
+          <li>首次 push 的 remote/branch/set-upstream 处理。</li>
+          <li>仓库与项目/产品记忆、工作区与项目/产品记忆；重新选择后更新映射。</li>
+          <li>产品版本、区域自动识别、实施项目级联、未完成任务预计结束日期。</li>
+          <li>简易/普通/标杆任务模板和工时类型→任务类型映射。</li>
+          <li>今日工时、明日计划、工时不足 8h 提示、逾期任务提醒和日报提交。</li>
+          <li>中国省市静态匹配、区域规则 A、实施项目规则 B。</li>
+        </ul>
+        <h3>已确认的行为选择</h3>
+        <ul>
+          <li><strong>运维补录工时类型：</strong>按弹窗中用户实际选择的工时类型登记，不再强制改为“代码编写”。</li>
+          <li><strong>简易任务模板：</strong>保持 VS Code 现状；未在简易/普通模式中展示的章节，仍按现有模板逻辑写入默认指导文案。</li>
+        </ul>
+      </section>
+
+      <section class="doc-section" id="entry">
+        <h2>4. 入口与使用方式</h2>
+        <h3>菜单入口</h3>
+        <p>在 <strong>Tools → Issue Link Push</strong> 注册统一 Action Group，包含全部 9 个动作。所有 Action 同时可通过 <strong>Find Action</strong> 搜索，快捷键由用户在 IDEA Keymap 中自行绑定。</p>
+
+        <h3>首次使用</h3>
+        <ol>
+          <li>安装插件 ZIP 并重启 IDEA（如 IDEA 要求）。</li>
+          <li>打开 <strong>Settings → Tools → Issue Link Push</strong>。</li>
+          <li>填写 DevOps 用户名和登录 password 密文，点击“Apply”或“OK”保存。</li>
+          <li>在项目中执行 <strong>Tools → Issue Link Push → 关联 DevOps 任务提交并推送</strong>。</li>
+        </ol>
+
+        <h3>日常提交</h3>
+        <ol>
+          <li>先在 IDEA Commit 工具窗口暂存需要提交的改动；若选择“重写并推送”，则准备好一个未推送 commit。</li>
+          <li>打开“关联 DevOps 工作项”弹窗，在同一页完成任务、提交信息、工时和完成度。</li>
+          <li>核对底部实时 commit 预览，点击与模式对应的主按钮。</li>
+          <li>弹窗内显示每步结果；全部成功后可直接关闭，失败时按提供的恢复动作处理。</li>
+        </ol>
+
+        <h3>无 Git 的任务登记</h3>
+        <p>执行“创建日常任务”，选择/确认项目产品、区域、工时类型与任务内容后直接创建 Task 并登记工时。该功能只要求 IDEA 已打开项目，不要求项目启用 Git。</p>
+      </section>
+
+      <section class="doc-section" id="ux">
+        <h2>5. 单弹窗 UI 设计</h2>
+        <p>实现基础为 IDEA <code>DialogWrapper</code> + 平台 Swing 组件。弹窗支持 Esc、平台按钮顺序和字段级 <code>ValidationInfo</code>；级联数据在后台加载，不关闭弹窗、不再弹第二个选择框。</p>
+
+        <h3>5.1 关联工作项弹窗</h3>
+        <div class="wireframe">┌ 关联 DevOps 工作项 ─────────────────────────────────────────────┐
+│ 操作：[提交并推送 ▼]    仓库：[git-push ▼]    分支：main       │
+│ 推送：origin/main（若无 upstream，在此行选择 remote/branch）    │
+├ 工作项 ────────────────────────────────────────────────────────┤
+│ 类型：(● Task  ○ Bug)                                          │
+│ 任务：[可搜索组合框：TASK-123 / 标题                         ▼] │
+│       支持直接输入编号并在本框查询；右侧 [刷新]                 │
+│ 状态：进行中  产品：XX  预计 8h / 已用 3h / 当前 40%            │
+├ 提交与工时 ────────────────────────────────────────────────────┤
+│ Commit type：[fix ▼]      工时类型：[代码编写 ▼]                │
+│ Subject：[修复……___________________________________________]    │
+│ 本次工时：[1.5__]  模式：累加   完成度：[20__]% 模式：覆盖      │
+│ 今日已有：2h / 40%；描述：……                                   │
+├ 预览 ──────────────────────────────────────────────────────────┤
+│ fix:修复…… scrum -e TASK-123 -h:1.5 -s:20          [复制]       │
+├ 执行状态（点击后原地展开）─────────────────────────────────────┤
+│ ✓ 创建 commit   ✓ 推送 origin/main   ✓ 登记工时                 │
+└──────────────────────────────────────── [取消] [提交并推送] ──┘</div>
+        <p>模式切换会改变前置校验和按钮文字：“仅提交”“提交并推送”“重写并推送”。不再使用含义错误的统一“确认并推送”。切换任务后在窗内加载今日工时；任何字段都能直接返回修改。</p>
+
+        <h3>5.2 创建任务弹窗</h3>
+        <div class="wireframe">┌ 创建运维任务并提交 ───────────────────────────────────────────┐
+│ 标题：[____________________________________________________]    │
+│ 研发项目：[XX ▼]  产品：[XX ▼]  版本：[XX ▼]                    │
+│ 区域：[北京 ▼]（由标题建议）  实施项目：[XX ▼]                   │
+│ 工时类型：[代码编写 ▼] → 任务类型：编码工作                     │
+│ 工时：[4__]  完成度：[100__]%  预计结束：[条件显示日期框]        │
+│ Commit type：[upd ▼]  仓库/推送：[origin/main]                  │
+├ 任务内容  模式：(● 简易 ○ 普通 ○ 标杆) ───────────────────────┤
+│ 任务描述：[多行编辑器_____________________________________]    │
+│ 验收标准：[普通/标杆显示__________________________________]    │
+│ [展开高级章节]  前置任务 / SVN / DB / 前端 / 后端 / 配置 / 影响 │
+├ 预览与执行 ────────────────────────────────────────────────────┤
+│ Task、commit、工时摘要；执行后显示每一步状态与任务链接          │
+└────────────────────────────────────── [取消] [创建、提交并推送] ┘</div>
+        <p>项目/产品映射自动预填，但始终可在原位置修改；提交成功后以当前选择覆盖旧映射。简易/普通/标杆只控制同一窗内字段显隐，不再逐章节弹 11 个输入框；为保持现有业务输出，未展示章节仍使用 VS Code 模板中的默认指导文案生成 Task HTML。</p>
+
+        <h3>5.3 日常任务弹窗</h3>
+        <p>复用创建任务表单，隐藏 Git/Commit 区域，主按钮改为“创建任务并登记工时”。项目产品基于当前 IDEA Project 记忆。</p>
+
+        <h3>5.4 日报弹窗</h3>
+        <div class="wireframe">┌ 提交日报 · 2026-08-23 ────────────────────────────────────────┐
+│ 今日工时：7.5h  ⚠ 不足 8h     逾期任务：2                     │
+│ [计划内/计划外只读树：任务、工时、完成度、描述]                 │
+│ 明日计划：[多行编辑器；预填上次计划_______________________]     │
+│ 其他事项：[多行编辑器____________________________________]     │
+│ ⚠ 工时不足仍可提交；主按钮保持可用但显示警告                    │
+└──────────────────────────────────────────── [取消] [提交日报] ┘</div>
+        <p>加载、编辑、警告和确认都在一个弹窗内。用户点击主按钮即提交，不再额外出现“最终确认”消息框。</p>
+
+        <h3>5.5 区域合规检查弹窗</h3>
+        <p>顶部为研发项目、产品和“开始检查”（首期范围固定本周）。运行后在同一弹窗下半部生成文本报告，包含任务编号、标题、处理人、区域、实施项目、命中地名和结论；可直接全选复制，不打开通用日志窗口。</p>
+
+        <h3>5.6 设置页</h3>
+        <p>Settings → Tools → Issue Link Push 集中配置账号、提交与工时、任务创建、网络与缓存、诊断。账号通过 Apply/OK 保存；“清除 DevOps 缓存”动作统一清理会话、字典缓存、版本记录和项目映射，但不删除 PasswordSafe 凭据。</p>
+      </section>
+
+      <section class="doc-section" id="architecture">
+        <h2>6. 技术架构</h2>
+        <div class="architecture">
+          <div class="layer"><strong>Actions / Settings</strong>：入口、可用性判断、打开 DialogWrapper；Action 本身无业务字段，避免泄漏 Project。</div>
+          <div class="layer"><strong>Dialogs</strong>：DialogWrapper + IDEA Swing 组件、字段状态、异步级联、校验、预览、步骤结果。</div>
+          <div class="layer"><strong>Application Use Cases</strong>：LinkWorkItem、CreateOpsTask、CreateDailyTask、SubmitDailyReport、CheckRegionCompliance。</div>
+          <div class="layer"><strong>Domain</strong>：模型、commit 格式、工时策略、任务类型映射、模板渲染、区域规则、操作结果。</div>
+          <div class="layer"><strong>Ports</strong>：DevOpsGateway、GitGateway、CredentialStore、SettingsStore、MappingStore、Clock、Logger。</div>
+          <div class="layer"><strong>Infrastructure</strong>：CompanyDevOpsClient、Git4IdeaGateway、PasswordSafe、PersistentStateComponent、IDE Notifications。</div>
+        </div>
+        <h3>关键设计决定</h3>
+        <ul>
+          <li>Kotlin/JVM 21；不嵌入浏览器 WebView，避免额外前端工程和 JCEF 复杂度。</li>
+          <li>UI 用平台原生组件，自动适配主题、缩放、键盘与无障碍。</li>
+          <li>领域层不依赖 IntelliJ 类，以便纯 JVM 单元测试。</li>
+          <li>所有外部写操作由 UseCase 编排并返回结构化步骤结果，不在 Dialog 中直接串 API。</li>
+          <li>统一使用 <code>Asia/Shanghai</code> Clock，消除当前 UTC 日期边界问题。</li>
+        </ul>
+      </section>
+
+      <section class="doc-section" id="project">
+        <h2>7. 实际工程结构</h2>
+        <pre><code>git-push-idea/
+├─ build.gradle.kts
+├─ settings.gradle.kts
+├─ gradle.properties
+├─ gradle/wrapper/
+├─ docs/
+├─ src/main/kotlin/com/ctjsoft/devops/
+│  ├─ action/                  # 9 个用户入口、流程编排、升级提醒
+│  ├─ api/                     # 认证、查询、工时、任务、日报、HTTP
+│  ├─ core/                    # commit、工时、模板、区域、解析、缓存
+│  ├─ git/                     # Git4Idea 适配与事务恢复
+│  ├─ model/                   # 领域与 API 模型
+│  ├─ settings/                # PasswordSafe、设置、产品映射
+│  └─ ui/                      # 4 个单弹窗与设置页
+├─ src/main/resources/
+│  ├─ META-INF/plugin.xml
+│  └─ data/locations.ts
+└─ src/test/kotlin/...</code></pre>
+
+        <h3>Gradle 设计基线</h3>
+        <pre><code>plugins {
+    kotlin("jvm") version "2.2.20"
+    id("org.jetbrains.intellij.platform") version "2.18.1"
+}
+
+// Wrapper: Gradle 9.0.0；Kotlin 编译目标：JVM 21
+
+repositories {
+    mavenCentral()
+    intellijPlatform { defaultRepositories() }
+}
+
+dependencies {
+    intellijPlatform {
+        local("D:/softFile/idea-2026.1.4.win")
+        bundledPlugin("Git4Idea")
+        testFramework(TestFrameworkType.Platform)
+    }
+}
+
+intellijPlatform {
+    pluginConfiguration {
+        ideaVersion {
+            sinceBuild = "261.26222.65"
+            untilBuild = "261.*"
+        }
+    }
+    pluginVerification {
+        ides { local("D:/softFile/idea-2026.1.4.win") }
+    }
+}</code></pre>
+        <p class="muted small">上述版本已在本机实际构建。Wrapper 锁定 Gradle 9.0.0，并记录官方 SHA-256；<code>untilBuild=261.*</code> 是按“只支持本机 2026.1”要求有意保留的兼容上界。</p>
+
+        <h3>plugin.xml 关键依赖</h3>
+        <pre><code>&lt;depends&gt;com.intellij.modules.platform&lt;/depends&gt;
+&lt;depends&gt;com.intellij.modules.vcs&lt;/depends&gt;
+&lt;depends&gt;Git4Idea&lt;/depends&gt;</code></pre>
+        <p class="muted small">未声明不必要的 <code>com.intellij.modules.idea</code>：当前代码只依赖 Platform、VCS 和 Git4Idea；增加该宽泛依赖会让本机产品布局解析无关的 Ultimate/CLion 模块。</p>
+      </section>
+
+      <section class="doc-section" id="devops">
+        <h2>8. DevOps 接入设计</h2>
+        <h3>客户端拆分</h3>
+        <table>
+          <thead><tr><th>类</th><th>职责</th></tr></thead>
+          <tbody>
+            <tr><td><code>DevOpsSessionClient</code></td><td>登录、Cookie/userId、登录失效重试一次、连接测试</td></tr>
+            <tr><td><code>WorkItemClient</code></td><td>Task/Bug 列表、两阶段分组查询、按编号查询、本周产品任务；普通任务列表固定复刻 VS Code 的 <code>groupId=6 / groupField=executeUser</code></td></tr>
+            <tr><td><code>WorkHourClient</code></td><td>工时列表、类型、新增、修改</td></tr>
+            <tr><td><code>TaskCreationClient</code></td><td>项目、产品、版本、区域、实施项目、字典、创建 Task</td></tr>
+            <tr><td><code>DailyReportClient</code></td><td>今日工作、明日计划、工时校验、逾期检查、日报提交</td></tr>
+            <tr><td><code>DevOpsPayloadParser</code></td><td>标准 JSON 与非标准 IIFE 兼容解析</td></tr>
+          </tbody>
+        </table>
+
+        <h3>已确认的协议边界</h3>
+        <ul>
+          <li>普通 Task/Bug 列表以现有 VS Code 源码为唯一基线，固定使用 <code>groupId=6</code>、<code>groupField=executeUser</code>，不为 HAR 中网页端的 <code>groupId=1 / createTime</code> 增加抽象兼容。</li>
+          <li>增量 HAR 中的 <code>/devops-server/config/v3/task/modify/task</code> 来自用户在详情页面点击“保存”；它不属于现有插件的工时登记职责，IDEA 版不实现、不调用。</li>
+          <li>HAR 仅作为真实 IIFE 响应及“详情 → 工时列表 → 新增工时 → 刷新”链路的增量证据；其他接口继续以已验证可用的 VS Code 适配器为迁移基线。</li>
+        </ul>
+
+        <h3>网络实现</h3>
+        <ul>
+          <li>优先使用 JDK 21 <code>HttpClient</code>，显式连接/请求超时，统一 User-Agent。</li>
+          <li>只允许 HTTPS 和固定主机 <code>devops.ctjsoft.com</code>；禁止自动跟随到其他主机。</li>
+          <li>Cookie 只在内存 Session 中保存，不写日志、不落普通配置文件。</li>
+          <li>401/登录页响应触发一次重新登录并重放幂等查询；写请求不自动盲目重放，避免重复 Task/工时。</li>
+          <li>对响应体设置上限；错误日志仅记录端点代号、状态码、requestId，不记录 Cookie、password、完整 user-context。</li>
+        </ul>
+
+        <h3>非标准 IIFE 响应</h3>
+        <p>采用双通道解析：</p>
+        <ol>
+          <li>先按标准 JSON 解析；这是绝大多数端点的快速、安全路径。</li>
+          <li>仅对已登记的兼容端点、固定 HTTPS 主机、符合特征的响应进入 Legacy Parser。</li>
+          <li>Legacy Parser 首选基于真实样本实现受限结构转换；若样本证明必须执行 IIFE，则将 Rhino 作为独立依赖，关闭 Java 类访问，限制脚本时长、指令数和响应大小，再把结果转成普通 JSON Tree。</li>
+          <li>未知脚本结构直接失败并给出诊断，不执行任意扩展语法。</li>
+        </ol>
+        <div class="callout ok"><strong>IIFE 样本门槛已满足。</strong><code>loadtask-savedaywork.har</code> 已提供三份真实 IIFE 响应，可用于验证解析结构。实现前从原始 HAR 生成脱敏 fixture 并加入回归测试；原始 HAR 含内部任务与人员信息，不提交 Git。</div>
+      </section>
+
+      <section class="doc-section" id="git">
+        <h2>9. Git 集成与事务设计</h2>
+        <h3>技术方案</h3>
+        <p>使用 <code>GitRepositoryManager</code> 获取当前 IDEA Project 下的 Git roots；用 Git4Idea 的命令封装执行 git，以继承 IDEA 的 Git 可执行文件配置、认证环境和取消机制。底层命令语义保持与 VS Code 版一致：<code>commit -m</code>、<code>commit --amend --only -m</code>、<code>push</code>、<code>push --set-upstream</code>、<code>reset --soft</code>。</p>
+
+        <h3>仓库选择</h3>
+        <ul>
+          <li>单 Git root 自动选中；多 root 在主弹窗顶部组合框选择。</li>
+          <li>Action 的 <code>update()</code> 只做轻量判断；完整 Git 状态在后台加载。</li>
+          <li>“仅提交/提交并推送/运维补录”要求 staged changes；“重写并推送”要求至少一个未推送 commit。</li>
+          <li>无 upstream 时在同一窗内出现 remote 与 branch 字段；默认当前分支。</li>
+        </ul>
+
+        <h3>执行计划与补偿</h3>
+        <table>
+          <thead><tr><th>模式</th><th>步骤</th><th>补偿策略</th></tr></thead>
+          <tbody>
+            <tr><td>重写并推送</td><td>amend → push → 工时</td><td>push 失败 soft reset 到执行前 HEAD/reflog；保留恢复命令供复制</td></tr>
+            <tr><td>提交并推送</td><td>commit → push → 工时</td><td>push 失败 soft reset 新 commit；恢复 staged changes</td></tr>
+            <tr><td>仅提交</td><td>commit → 工时</td><td>工时失败默认不回滚 commit，提供“重试登记工时”</td></tr>
+            <tr><td>运维任务</td><td>建 Task → commit → push → 工时</td><td>Task 不删除；push 失败继续工时；结果明确显示“部分成功”</td></tr>
+            <tr><td>日常任务</td><td>建 Task → 工时</td><td>工时失败保留 Task并提供任务链接与重试</td></tr>
+          </tbody>
+        </table>
+        <p>每次执行前记录 <code>beforeHead</code>、仓库 root、分支和 staged 状态摘要。恢复只针对本次新产生的 commit 且必须验证 HEAD 仍符合预期；如果用户/外部进程已改变仓库，停止自动恢复并显示手工命令，避免误 reset。</p>
+      </section>
+
+      <section class="doc-section" id="storage">
+        <h2>10. 配置与存储设计</h2>
+        <table>
+          <thead><tr><th>配置</th><th>默认值</th><th>存储</th><th>UI</th></tr></thead>
+          <tbody>
+            <tr><td>DevOps 用户名</td><td>空</td><td>Application PersistentState</td><td>账号</td></tr>
+            <tr><td>password 密文</td><td>空</td><td>IDEA PasswordSafe</td><td>账号（掩码）</td></tr>
+            <tr><td>commit 模板</td><td>与现版一致</td><td>Application PersistentState</td><td>提交与工时</td></tr>
+            <tr><td>工时模式</td><td>append</td><td>Application PersistentState</td><td>提交与工时</td></tr>
+            <tr><td>描述模式</td><td>append</td><td>Application PersistentState</td><td>提交与工时</td></tr>
+            <tr><td>完成度模式</td><td>overwrite</td><td>Application PersistentState</td><td>提交与工时</td></tr>
+            <tr><td>任务内容模式</td><td>simple</td><td>Application PersistentState</td><td>任务创建</td></tr>
+            <tr><td>请求超时</td><td>10000 ms</td><td>Application PersistentState</td><td>网络与缓存</td></tr>
+            <tr><td>字典缓存 TTL</td><td>300000 ms</td><td>Application PersistentState</td><td>网络与缓存</td></tr>
+            <tr><td>debug</td><td>false</td><td>Application PersistentState</td><td>诊断</td></tr>
+            <tr><td>仓库/工作区映射</td><td>空</td><td>Project workspace state</td><td>可清理，不进入 VCS</td></tr>
+          </tbody>
+        </table>
+
+        <h3>缓存策略</h3>
+        <ul>
+          <li>会话 Cookie：内存，插件/IDE 重启即失效。</li>
+          <li>项目、区域、工时类型、字典：按 TTL 内存缓存。</li>
+          <li>Task/Bug 列表：默认实时请求；弹窗提供刷新按钮，不受通用 TTL 误导。</li>
+          <li>产品、版本、实施项目：按父级 ID 在当前会话缓存，父级变化立即切换。</li>
+          <li>清理动作分为“清运行缓存”“清项目映射”“删除 DevOps 账号”“清全部非凭据数据”。</li>
+        </ul>
+
+        <h3>模板变量校验</h3>
+        <p>设置页实时检查 5 个必需变量，缺失时不允许 Apply；提供“恢复默认模板”和示例预览。账号保存时先后台测试连接，成功后再覆盖现有 PasswordSafe 值。</p>
+      </section>
+
+      <section class="doc-section" id="async">
+        <h2>11. 异步、线程与弹窗状态</h2>
+        <p>平台 2024.2+ 推荐协程执行上下文。设计使用项目/应用 Service 的 coroutine scope；网络、PasswordSafe 和 Git 操作不在 EDT 执行，UI 状态回到 EDT 更新。</p>
+        <table>
+          <thead><tr><th>状态</th><th>UI 行为</th><th>允许关闭</th></tr></thead>
+          <tbody>
+            <tr><td>LOADING</td><td>相关字段显示加载状态；其余字段可编辑</td><td>是，取消子任务</td></tr>
+            <tr><td>EDITING</td><td>完整编辑和实时校验</td><td>是</td></tr>
+            <tr><td>RUNNING_READ</td><td>检查/刷新可取消，显示进度</td><td>是，触发取消</td></tr>
+            <tr><td>RUNNING_WRITE</td><td>字段锁定，显示步骤清单；不再接受重复点击</td><td>默认否，直至当前不可中断步骤结束</td></tr>
+            <tr><td>PARTIAL_SUCCESS</td><td>显示成功/失败步骤、任务链接、重试或复制恢复命令</td><td>是</td></tr>
+            <tr><td>SUCCESS</td><td>显示完成摘要；主按钮变“关闭”</td><td>是</td></tr>
+          </tbody>
+        </table>
+        <p>级联请求使用版本号/Job 取消避免竞态：例如用户快速切换研发项目，旧产品请求即使较晚返回也不得覆盖新项目的产品列表。</p>
+      </section>
+
+      <section class="doc-section" id="security">
+        <h2>12. 安全与诊断日志</h2>
+        <ul>
+          <li>password 密文仅进 PasswordSafe；Windows 默认由 IDEA 的 KeePass 形式凭据存储承载。</li>
+          <li>PasswordSafe 的 get/set 是阻塞调用，统一在 IO dispatcher 执行。</li>
+          <li>不记录 password、Cookie、Set-Cookie、完整 Authorization/user-context 或完整登录响应。</li>
+          <li>日志中的用户名、userId、任务内容默认脱敏；debug 模式允许端点与字段名，但仍不输出凭据。</li>
+          <li>任务详情和日报属于公司内部数据，不上传第三方，不调用 AI。</li>
+          <li>Legacy IIFE Parser 只接受固定主机/端点响应并启用执行限制；普通文本绝不进入脚本执行。</li>
+          <li>插件 ZIP 若在公司范围分发，建议使用证书签名并记录 SHA-256。</li>
+        </ul>
+        <h3>日志位置与用户入口</h3>
+        <p>普通结果在弹窗内；诊断写 IDEA 日志并使用统一 logger category。设置页提供“打开日志目录”“复制脱敏诊断信息”，不额外常驻一个工具窗口。</p>
+      </section>
+
+      <section class="doc-section" id="errors">
+        <h2>13. 错误模型与恢复</h2>
+        <table>
+          <thead><tr><th>错误类型</th><th>用户提示</th><th>动作</th></tr></thead>
+          <tbody>
+            <tr><td>AUTH</td><td>账号失效或登录失败</td><td>打开设置 / 重试连接</td></tr>
+            <tr><td>NETWORK</td><td>超时、DNS、HTTP 状态和端点代号</td><td>重试当前读取；写请求先查询结果再决定</td></tr>
+            <tr><td>PARSE</td><td>DevOps 响应格式变化</td><td>复制脱敏诊断；保留响应摘要哈希</td></tr>
+            <tr><td>VALIDATION</td><td>字段旁显示原因</td><td>聚焦第一个错误字段</td></tr>
+            <tr><td>GIT_PRECONDITION</td><td>无 staged、无未推送 commit、无 remote</td><td>给出明确准备步骤</td></tr>
+            <tr><td>GIT_COMMAND</td><td>显示 Git 原始 stderr（过滤凭据 URL）</td><td>自动恢复或复制恢复命令</td></tr>
+            <tr><td>PARTIAL_SUCCESS</td><td>逐步显示哪些已完成、哪些失败</td><td>重试工时 / 打开 Task / 手动 push</td></tr>
+          </tbody>
+        </table>
+        <p>写请求生成本地 operationId 并记录阶段，但不伪装成后端幂等键。重试创建 Task 前先用返回的 Task code/id 判断是否已经创建；无法确认时要求用户人工决定，避免重复数据。</p>
+      </section>
+
+      <section class="doc-section" id="install">
+        <h2>14. 构建、安装与首次配置</h2>
+        <h3>开发构建</h3>
+        <pre><code>./gradlew clean test buildPlugin verifyPlugin</code></pre>
+        <p>产物位于 <code>build/distributions/issue-link-push-idea-&lt;version&gt;.zip</code>。开发运行优先让 Gradle 依赖本机 IDEA 路径，确保 API 与 <code>IU-261.26222.65</code> 一致。</p>
+
+        <h3>从磁盘安装</h3>
+        <ol>
+          <li>IDEA 打开 <strong>Settings → Plugins</strong>。</li>
+          <li>点击齿轮图标，选择 <strong>Install Plugin from Disk…</strong>。</li>
+          <li>选择构建出的 ZIP；不要手工解压。</li>
+          <li>按 IDEA 提示重启。</li>
+          <li>进入 <strong>Settings → Tools → Issue Link Push</strong> 完成账号配置与连接测试。</li>
+        </ol>
+
+        <h3>发布前检查</h3>
+        <ul class="checklist">
+          <li>单元测试全部通过。</li>
+          <li>Plugin Verifier 对 <code>D:\softFile\idea-2026.1.4.win</code> 无兼容性错误。</li>
+          <li>新建隔离 IDEA 配置目录进行安装、升级和卸载验证。</li>
+          <li>用测试 DevOps 数据完成 5 类写操作的冒烟测试。</li>
+          <li>检查 ZIP 不包含凭据、真实响应样本或内部日志。</li>
+        </ul>
+      </section>
+
+      <section class="doc-section" id="upgrade">
+        <h2>15. 插件升级、IDEA 升级与回滚</h2>
+        <h3>阶段 A：手工 ZIP 升级（首期）</h3>
+        <ol>
+          <li>保持插件 ID 不变，提高插件版本，例如 <code>0.1.0 → 0.1.1</code>。</li>
+          <li>构建并验证新 ZIP。</li>
+          <li>在 Plugins 页面再次执行 <strong>Install Plugin from Disk…</strong> 选择新 ZIP。</li>
+          <li>重启后插件状态和 PasswordSafe 凭据继续保留。</li>
+        </ol>
+
+        <h3>阶段 B：公司自定义插件仓库</h3>
+        <p>在公司 HTTPS 服务放置 ZIP 和 <code>updatePlugins.xml</code>，用户只需在 IDEA 的 Custom Plugin Repositories 中添加一次地址。之后 IDEA 根据同一插件 ID、更高版本号和兼容范围提示更新。</p>
+        <pre><code>&lt;plugins&gt;
+  &lt;plugin id="com.ctjsoft.devops.issue-link-push"
+          url="https://plugins.company.example/issue-link-push-0.1.1.zip"
+          version="0.1.1"&gt;
+    &lt;idea-version since-build="261.26222.65" until-build="261.*"/&gt;
+    &lt;name&gt;Issue Link Push&lt;/name&gt;
+  &lt;/plugin&gt;
+&lt;/plugins&gt;</code></pre>
+
+        <h3>配置升级</h3>
+        <ul>
+          <li>设置状态包含 schemaVersion；新增字段使用默认值，重命名/类型变化通过显式迁移处理。</li>
+          <li>PasswordSafe 的 service name 永久保持稳定，升级时不搬运或打印密码。</li>
+          <li>项目映射格式变化时保留旧键的只读迁移，成功后再写新格式。</li>
+        </ul>
+
+        <h3>IDEA 自身升级</h3>
+        <p>当前插件只声明 <code>261.*</code>。升级 IDEA 到 2026.2（262 分支）前，先为 262 构建新插件、运行 Verifier 和回归测试；不要通过手工修改 ZIP 中的 <code>until-build</code> 强行加载。</p>
+
+        <h3>回滚</h3>
+        <p>保留最近两个已验证 ZIP。若新版本异常，在 Plugins 中卸载/禁用新版本并安装旧 ZIP。若新版本已升级配置 schema，旧版仅在迁移设计声明向后兼容时回滚；否则先备份 IDEA 配置目录中的插件状态文件。DevOps/Git 已产生的远端写入不随插件回滚撤销。</p>
+      </section>
+
+      <section class="doc-section" id="testing">
+        <h2>16. 测试与验收设计</h2>
+        <h3>自动化测试层次</h3>
+        <table>
+          <thead><tr><th>层次</th><th>覆盖内容</th></tr></thead>
+          <tbody>
+            <tr><td>纯单元测试</td><td>commit 模板、AI 工时、工时策略、日期、任务类型映射、模板 HTML、区域规则</td></tr>
+            <tr><td>Parser 回归</td><td>标准 JSON、BOM、空响应、IIFE 样本、超大响应、恶意脚本拒绝</td></tr>
+            <tr><td>HTTP 合同测试</td><td>登录 Cookie/userId、pageId、两阶段查询、字段映射、错误状态</td></tr>
+            <tr><td>Git 集成测试</td><td>临时仓库：staged、commit、amend、upstream、无 remote、push 失败恢复</td></tr>
+            <tr><td>平台测试</td><td>Service、PersistentState、PasswordSafe adapter、Action 可用性</td></tr>
+            <tr><td>手工 UI 测试</td><td>暗色/亮色、125%/150% 缩放、键盘、窗口记忆、加载竞态、取消</td></tr>
+          </tbody>
+        </table>
+
+        <h3>功能验收矩阵</h3>
+        <table>
+          <thead><tr><th>ID</th><th>验收条件</th></tr></thead>
+          <tbody>
+            <tr><td>A01</td><td>本机 IU-261.26222.65 可从 ZIP 安装并成功加载，无启动异常。</td></tr>
+            <tr><td>A02</td><td>账号可测试、保存、读取和删除；日志/设置 XML 不出现 password/Cookie。</td></tr>
+            <tr><td>A03</td><td>关联任务、提交信息、工时、完成度在一个弹窗内完成；无额外 QuickPick 链。</td></tr>
+            <tr><td>A04</td><td>Task/Bug 列表、手动编号查询、今日工时、AI 参数与三种写入模式行为等价。</td></tr>
+            <tr><td>A05</td><td>仅提交、提交并推送、重写并推送三种模式在有/无 upstream 下正确。</td></tr>
+            <tr><td>A06</td><td>push 失败后符合恢复前提时自动 soft reset；不符合时不误操作并给出手工指令。</td></tr>
+            <tr><td>A07</td><td>运维任务单窗完成项目产品、区域、类型、模板、Git；部分成功状态清晰。</td></tr>
+            <tr><td>A08</td><td>日常任务不依赖 Git；所选工时类型和映射任务类型正确写入。</td></tr>
+            <tr><td>A09</td><td>日报单窗展示今日工作、计划、工时不足和逾期提示并成功提交。</td></tr>
+            <tr><td>A10</td><td>区域检查结果表与现版规则输出一致，支持筛选、复制和打开任务。</td></tr>
+            <tr><td>A11</td><td>Asia/Shanghai 凌晨时段日期测试不产生前一天记录。</td></tr>
+            <tr><td>A12</td><td>从 0.1.0 ZIP 升级至 0.1.1 后设置、映射和凭据保留。</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="doc-section" id="delivery">
+        <h2>17. 建议实施阶段</h2>
+        <table>
+          <thead><tr><th>阶段</th><th>产出</th><th>退出条件</th></tr></thead>
+          <tbody>
+            <tr><td>P0 工程基线</td><td>Gradle、plugin.xml、Action/Settings 壳、本机 runIde/Verifier</td><td>插件在本机加载，菜单与设置可见</td></tr>
+            <tr><td>P1 领域与接入</td><td>模型、格式化、工时策略、区域规则、DevOps 客户端、Parser</td><td>合同测试与真实只读查询通过</td></tr>
+            <tr><td>P2 Git 主流程</td><td>关联工作项单窗 + 三种 Git 模式 + 工时</td><td>A03–A06 通过</td></tr>
+            <tr><td>P3 任务创建</td><td>运维/日常任务单窗、映射、模板</td><td>A07–A08 通过</td></tr>
+            <tr><td>P4 日报与区域</td><td>日报单窗、合规结果表</td><td>A09–A10 通过</td></tr>
+            <tr><td>P5 发布</td><td>ZIP、变更日志、安装/升级验证、SHA-256</td><td>A01、A02、A11、A12 通过</td></tr>
+          </tbody>
+        </table>
+        <p>实现过程中优先建立真实响应样本的脱敏 fixture 和临时 Git 仓库测试。UI 美化排在业务等价、失败恢复和安全之后。</p>
+      </section>
+
+      <section class="doc-section" id="sources">
+        <h2>18. IntelliJ Platform 官方依据</h2>
+        <ul>
+          <li><a href="https://plugins.jetbrains.com/docs/intellij/build-number-ranges.html">Build Number Ranges</a>：261 对应 2026.1/Java 21，<code>until-build="261.*"</code> 表示同分支。</li>
+          <li><a href="https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html">Gradle 2.x Dependencies</a>：本地 IDE 依赖、bundled plugin 和目标平台配置。</li>
+          <li><a href="https://plugins.jetbrains.com/docs/intellij/plugin-dependencies.html">Plugin Dependencies</a> 与 <a href="https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html">Product Compatibility</a>：声明 platform、VCS 与 Git4Idea 依赖。</li>
+          <li><a href="https://plugins.jetbrains.com/docs/intellij/dialog-wrapper.html">DialogWrapper</a>：单弹窗、平台按钮与字段校验。</li>
+          <li><a href="https://plugins.jetbrains.com/docs/intellij/persisting-sensitive-data.html">Persisting Sensitive Data</a>：PasswordSafe、安全存储和后台线程要求。</li>
+          <li><a href="https://plugins.jetbrains.com/docs/intellij/persisting-state-of-components.html">Persisting State of Components</a>：设置与项目映射。</li>
+          <li><a href="https://plugins.jetbrains.com/docs/intellij/execution-contexts.html">Execution Contexts</a>：2024.2+ 推荐协程执行上下文与进度。</li>
+          <li><a href="https://plugins.jetbrains.com/docs/intellij/publishing-plugin.html">Publishing a Plugin</a>：<code>buildPlugin</code> ZIP 与从磁盘安装。</li>
+          <li><a href="https://plugins.jetbrains.com/docs/intellij/custom-plugin-repository.html">Custom Plugin Repository</a>：公司私有更新仓库与 <code>updatePlugins.xml</code>。</li>
+        </ul>
+        <p class="muted small">官方资料核对时间：2026-08-23。实现开始时应再次确认 Gradle 插件/Kotlin 版本及 261 API 的废弃变化。</p>
+      </section>
+    </article>
+  </div>
+  <div class="footer">评审入口：<a href="03-confirmation-checklist.html">查看待确认项 →</a></div>
+</main>
+</body>
+</html>
