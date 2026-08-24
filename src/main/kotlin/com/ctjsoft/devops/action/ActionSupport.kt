@@ -11,6 +11,8 @@ internal object ActionSupport {
     fun runtime(): DevOpsRuntime = ApplicationManager.getApplication().getService(DevOpsRuntime::class.java)
     fun api(): DevOpsApi = runtime().api()
 
+    fun diagnostic(message: String) = runtime().diagnostic(message)
+
     fun <T : Any> cached(key: String, loader: () -> T): T = runtime().cached(key, loader)
 
     fun notify(project: Project?, title: String, content: String, type: NotificationType = NotificationType.INFORMATION) {

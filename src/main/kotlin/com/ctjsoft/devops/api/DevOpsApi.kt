@@ -169,6 +169,7 @@ class DevOpsApi(
     }
 
     fun fetchTasksByProduct(devProjectId: String, productId: String): List<DevOpsTask> {
+        logger("[region] fetchTasksByProduct start")
         val activeSession = getSession()
         val baseCondition = JsonObject().apply {
             addProperty("topMenuId", DEV_TASK_TOP_MENU_ID)
@@ -213,14 +214,16 @@ class DevOpsApi(
             tasks += dataArray(postJson(TASK_LIST_PATH, step2, activeSession, true, DEV_TASK_PAGE_ID))
                 .mapNotNull { it.takeIf(JsonElement::isJsonObject)?.asJsonObject?.toTask(DevOpsTaskType.TASK) }
         }
-        return tasks.distinctBy(DevOpsTask::code)
+        return tasks.distinctBy(DevOpsTask::code).also {
+            logger("[region] fetchTasksByProduct completed count=${it.size}")
+        }
     }
 
     fun getUserId(): String = getSession().userId
 
     fun fetchWorkHours(taskId: String): List<WorkHourRecord> {
         val activeSession = getSession()
-        return dataArray(getJson("/devops-server/config/v3/task/query/workHour/list", mapOf("taskId" to taskId), activeSession))
+        val records = dataArray(getJson("/devops-server/config/v3/task/query/workHour/list", mapOf("taskId" to taskId), activeSession))
             .mapNotNull { element ->
                 element.takeIf(JsonElement::isJsonObject)?.asJsonObject?.let { obj ->
                     val id = obj.string("taskWorkhourId") ?: return@let null
@@ -233,6 +236,8 @@ class DevOpsApi(
                     )
                 }
             }
+        logger("[region] fetchWorkHours completed count=${records.size}")
+        return records
     }
 
     fun fetchWorkHourTypes(): List<WorkHourType> = fetchDictValues("taskWorkhourType")
@@ -286,13 +291,20 @@ class DevOpsApi(
         "/devops-server/config/commonQuery/query/devPro/list",
         mapOf("appId" to DEV_TASK_TOP_MENU_ID, "pageId" to DEV_TASK_PAGE_ID, "userId" to getSession().userId),
         "devprojId", "devprojCname",
-    ).map { DevProject(it.first, it.second) }
+    ).map { DevProject(it.first, it.second) }.also {
+        logger("[region] fetchDevProjects completed count=${it.size}")
+    }
 
-    fun fetchProductsByProject(devProjectId: String): List<Product> = querySimpleList(
-        "/devops-server/config/commonQuery/query/product/list",
-        mapOf("appId" to DEV_TASK_TOP_MENU_ID, "proId" to devProjectId, "pageId" to DEV_TASK_PAGE_ID, "userId" to getSession().userId),
-        "prodId", "prodCname",
-    ).map { Product(it.first, it.second) }
+    fun fetchProductsByProject(devProjectId: String): List<Product> {
+        logger("[region] fetchProductsByProject start")
+        return querySimpleList(
+            "/devops-server/config/commonQuery/query/product/list",
+            mapOf("appId" to DEV_TASK_TOP_MENU_ID, "proId" to devProjectId, "pageId" to DEV_TASK_PAGE_ID, "userId" to getSession().userId),
+            "prodId", "prodCname",
+        ).map { Product(it.first, it.second) }.also {
+            logger("[region] fetchProductsByProject completed count=${it.size}")
+        }
+    }
 
     fun fetchRegions(): List<Region> = querySimpleList(
         "/devops-server/config/commonQuery/query/region/list",
@@ -471,6 +483,8 @@ class DevOpsApi(
             throw DevOpsException("请先配置 DevOps 账号。", ErrorKind.AUTH)
         }
 
+        logger("[auth] login start credentialsPresent=true")
+
         val boundary = "----IssueLinkPush${UUID.randomUUID()}"
         val fields = linkedMapOf(
             "version" to "3.0",
@@ -506,7 +520,10 @@ class DevOpsApi(
         if (cookie.isBlank() || userId.isNullOrBlank()) {
             throw DevOpsException("DevOps 登录响应缺少 Cookie 或 userId。", ErrorKind.AUTH)
         }
-        return Session(cookie, userId).also { session = it }
+        return Session(cookie, userId).also {
+            session = it
+            logger("[auth] login completed cookiePresent=${cookie.isNotBlank()} userIdPresent=${userId.isNotBlank()}")
+        }
     }
 
     private fun postJson(
@@ -566,13 +583,16 @@ class DevOpsApi(
         nameField: String,
     ): List<Pair<String, String>> {
         val activeSession = getSession()
-        return dataArray(getJson(path, query, activeSession, DEV_TASK_PAGE_ID)).mapNotNull { element ->
+        logger("[api] list start method=GET path=$path")
+        val result = dataArray(getJson(path, query, activeSession, DEV_TASK_PAGE_ID)).mapNotNull { element ->
             element.takeIf(JsonElement::isJsonObject)?.asJsonObject?.let { obj ->
                 val id = obj.string(idField) ?: return@let null
                 val name = obj.string(nameField) ?: return@let null
                 id to name
             }
         }
+        logger("[api] list completed path=$path count=${result.size}")
+        return result
     }
 
     private fun requireBusinessSuccess(response: JsonElement) {

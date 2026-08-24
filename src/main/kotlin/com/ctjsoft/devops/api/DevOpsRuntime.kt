@@ -15,6 +15,13 @@ class DevOpsRuntime {
     private var fingerprint: String? = null
     private var current: DevOpsApi? = null
 
+    /** All plugin diagnostics go through the user-controlled setting. */
+    fun diagnostic(message: String) {
+        val enabled = ApplicationManager.getApplication()
+            .getService(IssueLinkPushSettings::class.java).state.debugMode
+        if (enabled) log.info(message)
+    }
+
     @Synchronized
     fun api(): DevOpsApi {
         val app = ApplicationManager.getApplication()
@@ -28,8 +35,8 @@ class DevOpsRuntime {
             current = DevOpsApi(
                 credentials = credentials,
                 timeoutMillis = settings.requestTimeoutMillis.toLong(),
-                transport = JavaHttpDevOpsTransport(),
-                logger = { message -> if (settings.debugMode) log.info(message) },
+                transport = JavaHttpDevOpsTransport(logger = ::diagnostic),
+                logger = ::diagnostic,
             )
             fingerprint = nextFingerprint
         }

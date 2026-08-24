@@ -6,6 +6,7 @@ import com.ctjsoft.devops.core.RegionCompliance
 import com.ctjsoft.devops.model.DevProject
 import com.ctjsoft.devops.model.Product
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.ValidationInfo
@@ -37,9 +38,13 @@ class RegionCheckDialog(
     init {
         title = "区域合规检查"
         fillProducts(initialProducts)
+        diagnostic("[region] dialog initialized projects=${devProjects.size} initialProducts=${initialProducts.size}")
         setOKButtonText("开始检查")
         init()
-        projectBox.addActionListener { loadProducts((projectBox.selectedItem as Item<DevProject>).value.id) }
+        projectBox.addActionListener {
+            diagnostic("[region] project selection changed")
+            loadProducts((projectBox.selectedItem as Item<DevProject>).value.id)
+        }
     }
 
     override fun createCenterPanel(): JComponent = JPanel(BorderLayout(0, 8)).apply {
@@ -64,26 +69,39 @@ class RegionCheckDialog(
         running = true
         isOKActionEnabled = false
         status.text = "正在拉取本周任务与工时并执行检查…"
+        diagnostic("[region] report check started")
         val project = (projectBox.selectedItem as Item<DevProject>).value
         val product = (productBox.selectedItem as Item<Product>).value
         CompletableFuture.supplyAsync { buildReport(project, product) }.whenComplete { text, error ->
-            ApplicationManager.getApplication().invokeLater {
+            diagnostic("[region] report callback received")
+            ApplicationManager.getApplication().invokeLater({
                 running = false
                 completed = true
                 report.text = if (error == null) text else "检查失败：${error.cause?.message ?: error.message}"
                 report.caretPosition = 0
                 status.text = if (error == null) "检查完成。" else "检查失败。"
+                if (error == null) {
+                    diagnostic("[region] report check completed")
+                } else {
+                    val cause = error.cause ?: error
+                    diagnostic("[region] report check failed ${cause.javaClass.simpleName}: ${cause.message.orEmpty()}")
+                }
                 setOKButtonText("关闭")
                 isOKActionEnabled = true
-            }
+            }, ModalityState.any())
         }
     }
 
     private fun buildReport(devProject: DevProject, product: Product): String {
+        diagnostic("[region] report task load started")
         val tasks = api.fetchTasksByProduct(devProject.id, product.id)
+        diagnostic("[region] report tasks loaded count=${tasks.size}")
         data class Checked(val task: com.ctjsoft.devops.model.DevOpsTask, val records: List<com.ctjsoft.devops.model.WorkHourRecord>, val result: com.ctjsoft.devops.core.RegionCheckResult)
         val checked = tasks.map { task ->
-            val records = runCatching { api.fetchWorkHours(task.id) }.getOrDefault(emptyList())
+            val records = runCatching { api.fetchWorkHours(task.id) }.getOrElse { error ->
+                diagnostic("[region] work-hour load failed ${error.javaClass.simpleName}: ${error.message.orEmpty()}")
+                emptyList()
+            }
             val contents = records.joinToString("\n") { it.workContent }
             Checked(task, records, RegionCompliance.check(task.title, contents, task.regionName.orEmpty(), task.opsProjectName.orEmpty()))
         }
@@ -110,19 +128,32 @@ class RegionCheckDialog(
 
     private fun loadProducts(devProjectId: String) {
         status.text = "正在加载产品…"
+        diagnostic("[region] product load started")
         CompletableFuture.supplyAsync {
             ApplicationManager.getApplication().getService(DevOpsRuntime::class.java)
                 .cached("products:$devProjectId") { api.fetchProductsByProject(devProjectId) }
         }.whenComplete { products, error ->
-            ApplicationManager.getApplication().invokeLater {
-                if (error == null) { fillProducts(products); status.text = "请选择范围后开始检查。" }
-                else status.text = "产品加载失败：${error.cause?.message ?: error.message}"
-            }
+            diagnostic("[region] product load callback received")
+            ApplicationManager.getApplication().invokeLater({
+                if (error == null) {
+                    fillProducts(products)
+                    status.text = "请选择范围后开始检查。"
+                    diagnostic("[region] product load completed count=${products.size}")
+                } else {
+                    val cause = error.cause ?: error
+                    status.text = "产品加载失败：${cause.message ?: cause.javaClass.simpleName}"
+                    diagnostic("[region] product load failed ${cause.javaClass.simpleName}: ${cause.message.orEmpty()}")
+                }
+            }, ModalityState.any())
         }
     }
 
     private fun fillProducts(products: List<Product>) {
         productBox.removeAllItems(); products.forEach { productBox.addItem(Item(it.name, it)) }
+    }
+
+    private fun diagnostic(message: String) {
+        ApplicationManager.getApplication().getService(DevOpsRuntime::class.java).diagnostic(message)
     }
 
     private fun constraints(column: Int) = GridBagConstraints().apply {

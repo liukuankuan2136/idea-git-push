@@ -13,6 +13,7 @@ import com.ctjsoft.devops.model.Region
 import com.ctjsoft.devops.model.WorkHourType
 import com.ctjsoft.devops.settings.TaskCreateMode
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.ValidationInfo
@@ -233,12 +234,12 @@ class TaskCreationDialog(
     private fun <T> asyncLoad(message: String, loader: () -> T, consumer: (T) -> Unit) {
         statusLabel.text = message
         CompletableFuture.supplyAsync(loader).whenComplete { value, error ->
-            ApplicationManager.getApplication().invokeLater {
+            ApplicationManager.getApplication().invokeLater({
                 if (error == null) {
                     consumer(value)
                     statusLabel.text = " "
                 } else statusLabel.text = "加载失败：${error.cause?.message ?: error.message}"
-            }
+            }, ModalityState.any())
         }
     }
 
